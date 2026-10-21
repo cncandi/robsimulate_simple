@@ -413,11 +413,13 @@ const canvas=document.getElementById('c3d');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(window.devicePixelRatio);
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x1e1e1e); // bg-pro default
+scene.background=new THREE.Color(0x1b1b1d);
 
 const perspCam=new THREE.PerspectiveCamera(50,1,1,80000);
 perspCam.up.set(0,0,1);
-const activeCam=perspCam;
+const orthoCam=new THREE.OrthographicCamera(-1,1,1,-1,1,200000);
+orthoCam.up.set(0,0,1);
+let activeCam=perspCam;
 
 // Lights
 scene.add(new THREE.AmbientLight(0xffffff, 0.85));
@@ -426,7 +428,7 @@ sun.position.set(1000,1000,2000);scene.add(sun);
 const fill=new THREE.DirectionalLight(0xffffff,0.4);fill.position.set(-1000,-500,1000);scene.add(fill);
 
 // Grid (horizontal, Z=0)
-const grid=new THREE.GridHelper(8000,40,0x2d2d30,0x2d2d30);
+const grid=new THREE.GridHelper(8000,40,0x77819b,0x494e5c);
 grid.rotation.x=Math.PI/2;
 scene.add(grid);
 
@@ -443,9 +445,9 @@ const robotGrp=new THREE.Group();scene.add(robotGrp);
 const markerGrp=new THREE.Group();scene.add(markerGrp);
 const markerVisuals=new THREE.Group();markerGrp.add(markerVisuals);
 {
-  const sp=new THREE.Mesh(new THREE.SphereGeometry(28,12,12),new THREE.MeshBasicMaterial({color:0xf05500,transparent:true,opacity:.9}));
+  const sp=new THREE.Mesh(new THREE.SphereGeometry(28,12,12),new THREE.MeshBasicMaterial({color:0x55aef4,transparent:true,opacity:.9}));
   markerVisuals.add(sp);
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(36,5,6,24),new THREE.MeshBasicMaterial({color:0xff6600}));
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(36,5,6,24),new THREE.MeshBasicMaterial({color:0x32c6da}));
   ring.rotation.x=Math.PI/2;markerVisuals.add(ring);
   for(const[d,c]of[[[1,0,0],0xff6666],[[0,1,0],0x66ff66],[[0,0,1],0x6699ff]])
     markerVisuals.add(new THREE.ArrowHelper(new THREE.Vector3(...d),new THREE.Vector3(),190,c,38,19));
@@ -698,9 +700,10 @@ function toggleLeftPanel() {
   if (!ep) return;
   const closed = ep._panelClosed;
   if (closed) {
-    ep.style.width = ep._savedW || '300px';
+    ep.style.width = ep._savedW || '380px';
     ep.style.minWidth = '';
     ep.style.overflow = '';
+    ep.style.padding = '';
     ep._panelClosed = false;
     if (btn) btn.textContent = '◀';
   } else {
@@ -708,6 +711,7 @@ function toggleLeftPanel() {
     ep.style.width = '0';
     ep.style.minWidth = '0';
     ep.style.overflow = 'hidden';
+    ep.style.padding = '0';
     ep._panelClosed = true;
     if (btn) btn.textContent = '▶';
   }
@@ -770,7 +774,7 @@ var _libRobots = [];
 
 function openLibPickerModal() {
   document.getElementById('libPickerSearch').value = '';
-  document.getElementById('libPickerList').innerHTML = '<div style="color:var(--txt3);padding:8px;font-family:monospace;font-size:12px">Lade…</div>';
+  document.getElementById('libPickerList').innerHTML = '<div class="lib-msg">Lade…</div>';
   document.getElementById('libPickerModal').style.display = 'flex';
   if (_libRobots.length) { renderLibPickerList(''); return; }
   fetch('https://cnc-technik.de/robsimul/roblib/api.php?action=list')
@@ -779,7 +783,7 @@ function openLibPickerModal() {
       _libRobots = (data.robots||[]).filter(function(r){ return (r.type||'robot') === 'robot'; });
       renderLibPickerList('');
     }).catch(function(e){
-      document.getElementById('libPickerList').innerHTML = '<div style="color:#f87171;padding:8px;font-family:monospace;font-size:11px">Fehler: '+e.message+'</div>';
+      document.getElementById('libPickerList').innerHTML = '<div class="lib-msg err">Fehler: '+e.message+'</div>';
     });
 }
 
@@ -790,11 +794,11 @@ function closeLibPickerModal() {
 function renderLibPickerList(q) {
   var el = document.getElementById('libPickerList');
   var items = q ? _libRobots.filter(function(r){ return r.name.toLowerCase().includes(q.toLowerCase()); }) : _libRobots;
-  if (!items.length) { el.innerHTML='<div style="color:var(--txt3);padding:8px;font-family:monospace;font-size:12px">Keine Einträge.</div>'; return; }
-  el.innerHTML = items.map(function(r,i){return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.06)">'
-    +'<div style="flex:1;min-width:0"><div style="font-family:monospace;font-size:12px;color:var(--txt)">'+(r.name||'')+'</div>'
-    +'<div style="font-size:10px;color:var(--txt3)">'+(r.marke||'')+' '+(r.modell||'')+'</div></div>'
-    +'<button data-lib-pick="'+i+'" style="padding:2px 10px;background:rgba(37,99,235,.2);border:1px solid rgba(37,99,235,.4);color:#60a5fa;border-radius:3px;cursor:pointer;font-family:monospace;font-size:11px">Laden</button>'
+  if (!items.length) { el.innerHTML='<div class="lib-msg">Keine Einträge.</div>'; return; }
+  el.innerHTML = items.map(function(r,i){return '<div class="lib-item">'
+    +'<div style="flex:1;min-width:0"><div class="name">'+(r.name||'')+'</div>'
+    +'<div class="meta">'+(r.marke||'')+' '+(r.modell||'')+'</div></div>'
+    +'<button class="btn primary" data-lib-pick="'+i+'">Laden</button>'
     +'</div>';
   }).join('');
   el.querySelectorAll('[data-lib-pick]').forEach(function(btn){
@@ -1128,30 +1132,62 @@ function computeIKTableProgressive(positions, done) {
 }
 const orbitTarget=new THREE.Vector3(500,0,600);
 const orbitState={theta:-0.7,phi:1.05,radius:3500};
+const ORTHO_K=Math.tan(25*Math.PI/180);   // Ortho-Ausschnitt = Perspektiv-Ausschnitt (FOV 50°)
+
+// Standardansichten (Kamera-Richtung vom Ziel aus)
+const VIEWS={
+  vorne:{theta:-Math.PI/2,phi:Math.PI/2}, hinten:{theta:Math.PI/2,phi:Math.PI/2},
+  links:{theta:Math.PI,phi:Math.PI/2},     rechts:{theta:0,phi:Math.PI/2},
+  oben:{theta:-Math.PI/2,phi:1e-4},        unten:{theta:-Math.PI/2,phi:Math.PI-1e-4},
+  iso:{theta:-0.7,phi:1.05}
+};
 
 function updateCamera(){
   const{theta,phi,radius}=orbitState;
-  perspCam.position.set(orbitTarget.x+radius*Math.sin(phi)*Math.cos(theta),orbitTarget.y+radius*Math.sin(phi)*Math.sin(theta),orbitTarget.z+radius*Math.cos(phi));
+  const dir=new THREE.Vector3(Math.sin(phi)*Math.cos(theta),Math.sin(phi)*Math.sin(theta),Math.cos(phi));
+  perspCam.position.copy(orbitTarget).addScaledVector(dir,radius);
   perspCam.lookAt(orbitTarget);
+  orthoCam.position.copy(orbitTarget).addScaledVector(dir,Math.max(radius,20000));
+  orthoCam.lookAt(orbitTarget);
+  const vp=canvas.parentElement, asp=vp.clientWidth/Math.max(1,vp.clientHeight), h=radius*ORTHO_K;
+  orthoCam.left=-h*asp; orthoCam.right=h*asp; orthoCam.top=h; orthoCam.bottom=-h;
+  orthoCam.updateProjectionMatrix();
   requestRender();
 }
 
-// ISO-Ansicht: Standardblickwinkel, Programm + Roboter im Bild
-function resetView(){
-  orbitState.theta=-0.7; orbitState.phi=1.05;
+function _markView(name){
+  document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('on',b.dataset.view===name));
+}
+function setView(name){
+  const v=VIEWS[name]; if(!v)return;
+  orbitState.theta=v.theta; orbitState.phi=v.phi;
+  _markView(name); fitView();
+}
+function setProjection(mode){
+  activeCam = mode==='ortho' ? orthoCam : perspCam;
+  document.querySelectorAll('[data-proj]').forEach(b=>b.classList.toggle('on',b.dataset.proj===mode));
+  updateCamera();
+}
+function zoomBy(f){
+  orbitState.radius=Math.max(80,Math.min(40000,orbitState.radius*f));
+  updateCamera();
+}
+// Einpassen: Roboter + Programmbahn ins Bild, Blickrichtung bleibt
+function fitView(){
   const box=new THREE.Box3();
   fkAll(jointAngles).pts.forEach(p=>box.expandByPoint(new THREE.Vector3(p[0],p[1],p[2])));
   parsedData.positions.forEach(p=>box.expandByPoint(new THREE.Vector3(p.X,p.Y,p.Z)));
+  axisSTLMeshes.concat(pedestalMesh,toolMesh).forEach(m=>{ if(m&&m.visible) box.expandByObject(m); });
   const ctr=new THREE.Vector3();box.getCenter(ctr);
   orbitTarget.copy(ctr);
-  orbitState.radius=Math.max(800,box.getSize(new THREE.Vector3()).length()*1.6);
+  orbitState.radius=Math.max(800,box.getSize(new THREE.Vector3()).length()*1.35);
   updateCamera();
 }
 
 function resize(){
   const vp=canvas.parentElement;const w=vp.clientWidth,h=vp.clientHeight;
   renderer.setSize(w,h);perspCam.aspect=w/h;perspCam.updateProjectionMatrix();
-  requestRender();
+  updateCamera();
 }
 window.addEventListener('resize', function(){ resize(); _aPlotFitWidth(); });
 
@@ -1169,16 +1205,20 @@ window.addEventListener('mousemove',e=>{
   if(!drag)return;
   const dx=e.clientX-drag.lx,dy=e.clientY-drag.ly;
   drag.lx=e.clientX;drag.ly=e.clientY;
-  if(!drag.pan){orbitState.theta-=dx*.007;orbitState.phi=Math.max(.04,Math.min(Math.PI-.04,orbitState.phi+dy*.007));}
-  else{const sc=orbitState.radius*.0008;const right=new THREE.Vector3().crossVectors(perspCam.getWorldDirection(new THREE.Vector3()),perspCam.up).normalize();orbitTarget.addScaledVector(right,-dx*sc);orbitTarget.z+=dy*sc;}
+  if(!drag.pan){orbitState.theta-=dx*.007;orbitState.phi=Math.max(1e-4,Math.min(Math.PI-1e-4,orbitState.phi+dy*.007));_markView(null);}
+  else{
+    // Verschieben in der Bildebene
+    const sc=orbitState.radius*2*ORTHO_K/Math.max(1,canvas.clientHeight);
+    const fwd=activeCam.getWorldDirection(new THREE.Vector3());
+    const right=new THREE.Vector3().crossVectors(fwd,activeCam.up).normalize();
+    const up=new THREE.Vector3().crossVectors(right,fwd).normalize();
+    orbitTarget.addScaledVector(right,-dx*sc).addScaledVector(up,dy*sc);
+  }
   updateCamera();
 });
 window.addEventListener('mouseup',()=>{if(drag){drag=null;canvas.classList.remove('dragging');}});
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
-canvas.addEventListener('wheel',e=>{
-  orbitState.radius=Math.max(80,Math.min(40000,orbitState.radius*(1+e.deltaY*.001)));
-  updateCamera();
-},{passive:true});
+canvas.addEventListener('wheel',e=>zoomBy(1+e.deltaY*.001),{passive:true});
 
 document.getElementById('code-input').addEventListener('input',()=>rebuildGutter());
 
@@ -1297,7 +1337,7 @@ function lerpAngles(a, b, f) {
 // Each entry: {pos:{X,Y,Z,A,B,C}, angles:[6], segIdx:int}
 // segIdx = index in parsedData.positions of destination point
 let trajectory = [];   // built once on parseAndLoad
-const PLANNED_COL = 0x1a3050, PATH_COL = 0xf05500; // geplante / abgefahrene Bahn
+const PLANNED_COL = 0x60687b, PATH_COL = 0x32c6da; // geplante / abgefahrene Bahn
 var _realtimeMode = false;  // Standard: aus
 
 // ── DPSolver initialisieren ───────────────────────────────────
@@ -1898,7 +1938,7 @@ function _aPlotFitWidth() {
 function toggleAPlot() {
   var p = document.getElementById('aplot-panel');
   if (!p) return;
-  var show = p.style.display === 'none';
+  var show = getComputedStyle(p).display === 'none';
   p.style.display = show ? 'block' : 'none';
   document.getElementById('rib-aplot').classList.toggle('on', show);
   if (show) {
@@ -1922,23 +1962,23 @@ function _aPlotCalcDists(pos) {
 
 function _aPlotDrawBackground(ctx, ML, MT, CW, CH, W, H) {
   const AMIN = -360, ARNG = 720;
-  ctx.fillStyle = '#07111a'; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#0b1925'; ctx.fillRect(ML, MT, CW, CH);
+  ctx.fillStyle = '#242426'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#1b1b1d'; ctx.fillRect(ML, MT, CW, CH);
   ctx.font = '10px monospace';
   [-360,-270,-180,-90,0,90,180,270,360].forEach(function(deg) {
     var yp = MT + (1 - (deg - AMIN) / ARNG) * CH;
     var isZero = deg === 0, is180 = Math.abs(deg) === 180;
-    ctx.strokeStyle = isZero ? '#1d4060' : '#0d2030';
+    ctx.strokeStyle = isZero ? '#60687b' : '#37373a';
     ctx.lineWidth = (isZero || is180) ? 1 : 0.5;
     ctx.beginPath(); ctx.moveTo(ML, yp); ctx.lineTo(ML + CW, yp); ctx.stroke();
-    ctx.fillStyle = isZero ? '#70b0d0' : is180 ? '#4a8090' : '#2a5060';
+    ctx.fillStyle = isZero ? '#e2e2e4' : is180 ? '#c7c7ca' : '#9a9a9f';
     ctx.textAlign = 'right';
     ctx.fillText(deg + '°', ML - 4, yp + 3.5);
   });
   ctx.save();
   ctx.translate(10, MT + CH / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle = '#4a8090'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#9a9a9f'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
   ctx.fillText('A (Rz) [°]', 0, 0);
   ctx.restore();
 }
@@ -1948,12 +1988,12 @@ function _aPlotDrawVerticalGrid(ctx, ML, MT, CW, CH, pos, total) {
   for (let xs = 0; xs <= xSteps; xs++) {
     var xf  = xs / xSteps;
     var xpx = ML + xf * CW;
-    ctx.strokeStyle = '#0d2030'; ctx.lineWidth = 0.5;
+    ctx.strokeStyle = '#37373a'; ctx.lineWidth = 0.5;
     ctx.beginPath(); ctx.moveTo(xpx, MT); ctx.lineTo(xpx, MT + CH); ctx.stroke();
-    ctx.fillStyle = '#3a6080'; ctx.textAlign = 'center'; ctx.font = '10px monospace';
+    ctx.fillStyle = '#9a9a9f'; ctx.textAlign = 'center'; ctx.font = '10px monospace';
     ctx.fillText((xf * total / 1000).toFixed(2) + 'm', xpx, MT + CH + 18);
   }
-  ctx.strokeStyle = '#2a5070'; ctx.lineWidth = 1;
+  ctx.strokeStyle = '#505055'; ctx.lineWidth = 1;
   ctx.strokeRect(ML, MT, CW, CH);
 }
 
@@ -1987,13 +2027,13 @@ function _aPlotDrawCurves(ctx, ML, MT, CW, CH, pos, total) {
   var xp = function(i) { return ML + (_aPlotDists[i] / total) * CW; };
   var yp = function(a) { return MT + (1 - (a - AMIN) / ARNG) * CH; };
   // Originallinie (orange)
-  ctx.beginPath(); ctx.strokeStyle = '#f05500'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.strokeStyle = '#32c6da'; ctx.lineWidth = 2;
   pos.forEach(function(p, i) { i===0 ? ctx.moveTo(xp(i),yp(p.A)) : ctx.lineTo(xp(i),yp(p.A)); });
   ctx.stroke();
   // Wegpunkte
   pos.forEach(function(p, i) {
     var a = (_aPlotEdits[i] !== undefined) ? _aPlotEdits[i] : p.A;
-    ctx.fillStyle = (_aPlotEdits[i] !== undefined) ? '#ffee00' : '#ff8800';
+    ctx.fillStyle = (_aPlotEdits[i] !== undefined) ? '#ffee00' : '#7bd8e4';
     ctx.beginPath(); ctx.arc(xp(i), yp(a), 4, 0, 2*Math.PI); ctx.fill();
   });
   // Editierte Linie (gelb gestrichelt)
@@ -2089,10 +2129,10 @@ function _aPlotDrawCursor(ctx, ML, MT, CW, CH, pos, total) {
   var ca = pos[i0].A + (pos[i1].A - pos[i0].A) * fr;
   var cx = ML + (cd / total) * CW;
   var cy = MT + (1 - (ca - AMIN) / ARNG) * CH;
-  ctx.strokeStyle = 'rgba(0,200,255,0.55)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+  ctx.strokeStyle = 'rgba(85,174,244,0.6)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
   ctx.beginPath(); ctx.moveTo(cx, MT); ctx.lineTo(cx, MT+CH); ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle = '#00ccff';
+  ctx.fillStyle = '#55aef4';
   ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 2*Math.PI); ctx.fill();
   var info = document.getElementById('aplot-info');
   if (info) info.textContent = 'A = ' + ca.toFixed(2) + '°  ·  Pos ' + (i0+1) + '/' + N + '  ·  ' + (cd/1000).toFixed(3) + ' m';
@@ -2102,7 +2142,7 @@ function _aPlotDrawCursor(ctx, ML, MT, CW, CH, pos, total) {
 function aPlotDraw() {
   var canvas = document.getElementById('aplot-canvas');
   var panel  = document.getElementById('aplot-panel');
-  if (!canvas || !panel || panel.style.display === 'none') return;
+  if (!canvas || !panel || getComputedStyle(panel).display === 'none') return;
 
   var W = canvas.width, H = canvas.height;
   var ML=56, MT=14, MR=10, MB=30;
@@ -2114,7 +2154,7 @@ function aPlotDraw() {
 
   var pos = (parsedData && parsedData.positions) ? parsedData.positions : [];
   if (!pos.length) {
-    ctx.fillStyle = '#3a6080'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#9a9a9f'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
     ctx.fillText('Kein Programm geladen', W/2, H/2);
     return;
   }
@@ -2556,7 +2596,7 @@ parseAndLoad();
 
 window.addEventListener('load', function() {
   resize();
-  resetView();
+  setView('iso');
   splashProgress(100, 'Bereit.');
   setTimeout(splashHide, 400);
   ['ver-header','ver-splash'].forEach(function(id) {
