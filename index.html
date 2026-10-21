@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261021v">
+<link rel="stylesheet" href="./css/simulator.css?v=20261021w">
 </head>
 <body>
 
@@ -22,12 +22,9 @@
   <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
   <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 2.5l8.5 4.75v9.5L12 21.5l-8.5-4.75v-9.5z"/><path d="M3.5 7.25L12 12l8.5-4.75M12 12v9.5"/></symbol>
-  <symbol id="i-persp" viewBox="0 0 24 24"><path d="M4 5h16l-3 14H7z"/><path d="M8.6 9.5h6.8M9.6 14h4.8"/></symbol>
-  <symbol id="i-ortho" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
   <symbol id="i-zin" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4M11 8v6M8 11h6"/></symbol>
   <symbol id="i-zout" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4M8 11h6"/></symbol>
   <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8"/></symbol>
-  <symbol id="i-lib" viewBox="0 0 24 24"><path d="M4 4h4v16H4zM10 4h4v16h-4z"/><path d="M16.5 4.6l3.9-1 3.6 15.5-3.9.9z" transform="translate(-2 1)"/></symbol>
   <symbol id="i-path" viewBox="0 0 24 24"><path d="M3 18c3-8 6-12 9-8s6 2 9-6"/><circle cx="3" cy="18" r="1.4" fill="currentColor"/></symbol>
   <symbol id="i-pathupto" viewBox="0 0 24 24"><path d="M3 18c3-8 6-12 9-8"/><path d="M12 10c3 4 6 2 9-6" stroke-dasharray="2 2.5" opacity=".5"/><circle cx="12" cy="10" r="2" fill="currentColor"/></symbol>
   <symbol id="i-pathoff" viewBox="0 0 24 24"><path d="M3 18c3-8 6-12 9-8s6 2 9-6" opacity=".45"/><path d="M4 4l16 16"/></symbol>
@@ -67,10 +64,6 @@
     <button class="tbtn" data-view="iso"    onclick="setView('iso')"><svg class="ico"><use href="#i-cube"/></svg>Isometrisch</button>
   </div>
   <div class="tgroup">
-    <button class="tbtn on" data-proj="persp" onclick="setProjection('persp')"><svg class="ico"><use href="#i-persp"/></svg>Perspektive</button>
-    <button class="tbtn" data-proj="ortho" onclick="setProjection('ortho')"><svg class="ico"><use href="#i-ortho"/></svg>Orthogonal</button>
-  </div>
-  <div class="tgroup">
     <button class="tbtn" onclick="zoomBy(0.8)"><svg class="ico"><use href="#i-zin"/></svg>Zoom +</button>
     <button class="tbtn" onclick="zoomBy(1.25)"><svg class="ico"><use href="#i-zout"/></svg>Zoom −</button>
     <button class="tbtn" onclick="fitView()"><svg class="ico"><use href="#i-fit"/></svg>Einpassen</button>
@@ -81,7 +74,6 @@
     <button class="tbtn" data-path="none" onclick="setPathMode('none')" title="G-Code-Bahn ausblenden"><svg class="ico"><use href="#i-pathoff"/></svg>Aus</button>
   </div>
   <div class="tgroup">
-    <button class="tbtn" onclick="openLibPickerModal()" title="Roboter aus der RobLib-Bibliothek wählen"><svg class="ico"><use href="#i-lib"/></svg>Bibliothek</button>
     <button class="tbtn" id="rib-aplot" onclick="toggleAPlot()" title="A-Winkel-Verlauf ein/ausblenden"><svg class="ico"><use href="#i-chart"/></svg>A-Plot</button>
   </div>
 </nav>
@@ -235,7 +227,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261021v"></script>
-<script src="./js/simulator.js?v=20261021v"></script>
+<script src="./js/dp-solver.js?v=20261021w"></script>
+<script src="./js/simulator.js?v=20261021w"></script>
 </body>
 </html>

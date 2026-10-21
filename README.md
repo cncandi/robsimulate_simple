@@ -13,7 +13,7 @@ Live: https://cnc-technik.de/robsimul/simple/
   Knoten verschiebbar / einfügbar / löschbar. Verifikation prüft jeden Programmpunkt mit dem A der Linie.
   "Übernehmen" schreibt A für alle Punkte ins KRL.
 - Ellbogen-Singularität: Streckwinkel aus den Achsmaßen berechnet (KR8 ca. 18°), nicht pauschal A3 = ±90°.
-- 3D-Ansicht: Standardansichten Vorne/Hinten/Links/Rechts/Oben/Unten/Isometrisch, Perspektive/Orthogonal,
+- 3D-Ansicht: Standardansichten Vorne/Hinten/Links/Rechts/Oben/Unten/Isometrisch, 
   Zoom +/−, Einpassen; Maus: Drehen (links), Verschieben (rechts/Mitte), Zoom (Rad)
 - Oberfläche im Stil von P3D-SO (Farben, Toolbar mit Icon über Label, Panels, Statusleiste)
 

@@ -505,9 +505,7 @@ scene.background=new THREE.Color(0x1b1b1d);
 
 const perspCam=new THREE.PerspectiveCamera(50,1,1,80000);
 perspCam.up.set(0,0,1);
-const orthoCam=new THREE.OrthographicCamera(-1,1,1,-1,1,200000);
-orthoCam.up.set(0,0,1);
-let activeCam=perspCam;
+const activeCam=perspCam;
 
 // Lights
 scene.add(new THREE.AmbientLight(0xffffff, 0.85));
@@ -1423,7 +1421,7 @@ function computeIKTableProgressive(positions, done) {
 }
 const orbitTarget=new THREE.Vector3(500,0,600);
 const orbitState={theta:-0.7,phi:1.05,radius:3500};
-const ORTHO_K=Math.tan(25*Math.PI/180);   // Ortho-Ausschnitt = Perspektiv-Ausschnitt (FOV 50°)
+const VIEW_K=Math.tan(25*Math.PI/180);    // halber Bildwinkel (FOV 50°) für Verschieben in der Bildebene
 
 // Standardansichten (Kamera-Richtung vom Ziel aus)
 const VIEWS={
@@ -1438,11 +1436,6 @@ function updateCamera(){
   const dir=new THREE.Vector3(Math.sin(phi)*Math.cos(theta),Math.sin(phi)*Math.sin(theta),Math.cos(phi));
   perspCam.position.copy(orbitTarget).addScaledVector(dir,radius);
   perspCam.lookAt(orbitTarget);
-  orthoCam.position.copy(orbitTarget).addScaledVector(dir,Math.max(radius,20000));
-  orthoCam.lookAt(orbitTarget);
-  const vp=canvas.parentElement, asp=vp.clientWidth/Math.max(1,vp.clientHeight), h=radius*ORTHO_K;
-  orthoCam.left=-h*asp; orthoCam.right=h*asp; orthoCam.top=h; orthoCam.bottom=-h;
-  orthoCam.updateProjectionMatrix();
   requestRender();
 }
 
@@ -1453,11 +1446,6 @@ function setView(name){
   const v=VIEWS[name]; if(!v)return;
   orbitState.theta=v.theta; orbitState.phi=v.phi;
   _markView(name); fitView();
-}
-function setProjection(mode){
-  activeCam = mode==='ortho' ? orthoCam : perspCam;
-  document.querySelectorAll('[data-proj]').forEach(b=>b.classList.toggle('on',b.dataset.proj===mode));
-  updateCamera();
 }
 function zoomBy(f){
   orbitState.radius=Math.max(80,Math.min(40000,orbitState.radius*f));
@@ -1499,7 +1487,7 @@ window.addEventListener('mousemove',e=>{
   if(!drag.pan){orbitState.theta-=dx*.007;orbitState.phi=Math.max(1e-4,Math.min(Math.PI-1e-4,orbitState.phi+dy*.007));_markView(null);}
   else{
     // Verschieben in der Bildebene
-    const sc=orbitState.radius*2*ORTHO_K/Math.max(1,canvas.clientHeight);
+    const sc=orbitState.radius*2*VIEW_K/Math.max(1,canvas.clientHeight);
     const fwd=activeCam.getWorldDirection(new THREE.Vector3());
     const right=new THREE.Vector3().crossVectors(fwd,activeCam.up).normalize();
     const up=new THREE.Vector3().crossVectors(right,fwd).normalize();
