@@ -2019,19 +2019,37 @@ function _simCalcSpeed(pos, curPosIdx, nextPosIdx) {
   return { speed: velMmS / eff, velCP: curVelCP, displayMmMin: dispMmMin };
 }
 
+// Fortschritt über dt satzweise integrieren: jeder Satz hat seine eigene Rate (Sätze/s),
+// die Bildzeit wird über Satzgrenzen hinweg korrekt aufgeteilt (kein Überspringen nach kurzen Sätzen)
+function _simIntegrate(pos, t, dir, dt) {
+  const N = pos.length;
+  let rem = dt, guard = 0;
+  while (rem > 1e-9 && guard++ < 100000) {
+    const i0 = dir > 0 ? Math.floor(t + 1e-9) : Math.ceil(t - 1e-9) - 1;
+    if (i0 < 0 || i0 >= N - 1) break;
+    const rate = _simCalcSpeed(pos, i0, i0 + 1).speed;
+    const bound = dir > 0 ? i0 + 1 : i0;
+    const need = Math.abs(bound - t) / rate;
+    if (need > rem) { t += dir * rate * rem; rem = 0; }
+    else { t = bound; rem -= need; }
+  }
+  return t;
+}
+
 // Simulationszeit um dt vorrücken; rendert selbst und gibt false zurück wenn frame() nicht weiterrendern soll
 function _simAdvance(N, dt, speed, velCP, displayMmMin) {
   let newT;
+  const pos = parsedData.positions;
   if (sim.stepTarget !== null) {
     const sd = sim.stepTarget > sim.t ? 1 : -1;
-    newT = sim.t + sd * speed * dt;
+    newT = _simIntegrate(pos, sim.t, sd, dt);
     if ((sd > 0 && newT >= sim.stepTarget) || (sd < 0 && newT <= sim.stepTarget)) {
       newT = sim.stepTarget; sim.stepTarget = null;
       applySimT(newT); setStatus('paused','PAUSED'); renderer.render(scene, activeCam);
       return false;
     }
   } else {
-    newT = sim.t + sim.dir * speed * dt;
+    newT = _simIntegrate(pos, sim.t, sim.dir, dt);
     if      (newT >= N-1) { newT = N-1; pauseSim(); setStatus('end','END ✓'); }
     else if (newT <= 0)   { newT = 0;   pauseSim(); setStatus('paused','START'); }
     else { setStatus('playing', (sim.dir>0?'▶':'◀') + '  ' + (displayMmMin??Math.round(velCP*60000)) + ' mm/min'); }
