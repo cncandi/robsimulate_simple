@@ -316,8 +316,10 @@ function solveIKAnalytic(tx, ty, tz, ta, tb, tc, prevQ, strict) {
       }
       q.push(v);
     }
+    // Abstand über den kürzesten Winkelweg: prevQ kann stetig fortgeführt außerhalb ±360° liegen
+    // (Simulationstabelle); sonst wirkt die nahe Lösung 360° entfernt und die Über-Kopf-Stellung gewinnt
     let cost = 0;
-    for (let i = 0; i < 6; i++) cost += (q[i] - prevQ[i])**2;
+    for (let i = 0; i < 6; i++) cost += shortestAngleDiff(prevQ[i], q[i])**2;
     if (!inLim) cost += 1e9;
     if (cost < bestCost) { bestCost = cost; best = {q, inLim}; }
   }
@@ -1358,11 +1360,23 @@ function _ikJumpCheck() {
     for (let j = 0; j < 6; j++) { const d = Math.abs(shortestAngleDiff(a[j], b[j])); if (d > jmax) { jmax = d; jx = j; } }
     if (jmax > 15) { _ikJumps.push({ i: i, axis: jx + 1, deg: jmax }); lastSeg = i; }
   }
+  // Kollision der simulierten Stellung mit dem gedruckten Teil
+  const coll = [];
+  for (let i = 0; i < ikTable.length; i++) { const a = ikTable[i] && ikTable[i].angles; if (a && _aCollides(_aNormQ(a), i)) coll.push(i); }
   if (!el) return;
-  if (!_ikJumps.length) { el.style.display = 'none'; return; }
-  const f = _ikJumps[0], ln = P[f.i].lineNum !== undefined ? P[f.i].lineNum + 1 : '?';
-  el.textContent = 'Achtung: Achssprung an ' + _ikJumps.length + ' Sätzen, erster bei Satz ' + (f.i + 1) + ' (Zeile ' + ln + '), A' + f.axis + ' '
-    + Math.round(f.deg) + '°. Achsgrenze erreicht – auf dem Roboter nicht fahrbar. Robot Map prüfen.';
+  if (!_ikJumps.length && !coll.length) { el.style.display = 'none'; return; }
+  const msgs = []; let f;
+  if (_ikJumps.length) {
+    f = _ikJumps[0]; const ln = P[f.i].lineNum !== undefined ? P[f.i].lineNum + 1 : '?';
+    msgs.push('Achssprung an ' + _ikJumps.length + ' Sätzen, erster bei Satz ' + (f.i + 1) + ' (Zeile ' + ln + '), A' + f.axis + ' '
+      + Math.round(f.deg) + '° – Achsgrenze erreicht, auf dem Roboter nicht fahrbar.');
+  }
+  if (coll.length) {
+    const ci = coll[0], ln = P[ci].lineNum !== undefined ? P[ci].lineNum + 1 : '?';
+    msgs.push('Kollision mit dem Bauteil an ' + coll.length + ' Sätzen, erster bei Satz ' + (ci + 1) + ' (Zeile ' + ln + ').');
+    if (!f || ci < f.i) f = { i: ci };
+  }
+  el.textContent = 'Achtung: ' + msgs.join(' ') + ' Robot Map prüfen.';
   el.style.display = '';
   el.onclick = function() { pauseSim(); applySimT(Math.max(0, f.i - 1)); const si = parsedData.stepOfPos ? parsedData.stepOfPos[f.i - 1] : -1; if (si >= 0) applyStep(si); };
 }
@@ -2350,22 +2364,23 @@ END`;
 // automatisch angelegt, Knoten verschiebbar. Die Linie legt A für ALLE Programmpunkte fest.
 // ══════════════════════════════════════════════════════
 const SING_BIT = { wrist:1, shoulder:2, elbow:4 };
-const CELL_LIMIT = 8, CELL_REACH = 16, CELL_SING = 7;
+const CELL_LIMIT = 8, CELL_REACH = 16, CELL_SING = 7, CELL_COLL = 32;
 const AMAP_MIN = -360, AMAP_MAX = 360;
 const AMAP_COL = {
   reach: [110, 18, 32],   // dunkelrot: keine IK-Lösung
   limit: [222, 40, 82],   // rot: nur außerhalb der Achsgrenzen lösbar
   sing:  [235, 196, 50],  // gelb: singulär
+  coll:  [255, 140, 26],  // orange: Kollision Roboter/Werkzeug mit gedrucktem Teil
 };
-const AMAP_KIND_TXT = { 1:'unerreichbar', 2:'Achsgrenze', 3:'Singularität', 4:'Achssprung' };
-const AMAP_KIND_COL = { 1:'#ff4d6a', 2:'#ff4d6a', 3:'#ebc432', 4:'#ff9b3d' };
+const AMAP_KIND_TXT = { 1:'unerreichbar', 2:'Achsgrenze', 3:'Singularität', 4:'Achssprung', 5:'Kollision' };
+const AMAP_KIND_COL = { 1:'#ff4d6a', 2:'#ff4d6a', 3:'#ebc432', 4:'#ff9b3d', 5:'#ff8c1a' };
 
 var _aPlotDists = [];
 var _aPlotEdits = {};
 var _aMap = null;          // { sig, L, astep, nA, samples:[{d, code:Uint8Array}] }
 var _aPath = null;         // grüne Linie: [{d, a}] nach d sortiert, erster d=0, letzter d=L
 var _aVerify = null;       // { bad:Int32Array, kind:Uint8Array }
-var _aLayers = { reach:true, limit:true, sing:true, prog:true, path:true };
+var _aLayers = { reach:true, limit:true, sing:true, coll:true, prog:true, path:true };
 var _aScanId = 0, _aVerifyId = 0;
 var _aPlotVersion = 0, _aPlotCache = null, _aPlotCacheVer = -1, _aMapImg = null, _aMapImgKey = '';
 var _aG = { ML:54, MT:10, MR:12, MB:46, W:0, H:0, CW:0, CH:0, dpr:1 };
@@ -2446,8 +2461,44 @@ function _aNormQ(q) {
 }
 function _aStartQ(i) { return _aNormQ((ikTable && ikTable[i] && ikTable[i].angles) ? ikTable[i].angles : jointAngles); }
 
+// ── Kollision: Roboterglieder und Werkzeug gegen das bis Punkt i gedruckte Teil ──
+// Teil = Hülle (achsparallele Box) aller Bahnpunkte 0…i. Glieder Sockel→Flansch als Zylinder mit Radius R,
+// Werkzeug Flansch→TCP mit Radius 20 mm ohne die untersten 40 mm (Düse berührt das Teil zwangsläufig).
+var _aPP = null, _aPPpos = null;
+function _aPartPrefix(pos) {
+  if (_aPPpos === pos && _aPP) return _aPP;
+  var N = pos.length, B = new Float64Array(N * 6), b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < N; i++) {
+    var p = pos[i];
+    b[0] = Math.min(b[0], p.X); b[1] = Math.min(b[1], p.Y); b[2] = Math.min(b[2], p.Z);
+    b[3] = Math.max(b[3], p.X); b[4] = Math.max(b[4], p.Y); b[5] = Math.max(b[5], p.Z);
+    B.set(b, i * 6);
+  }
+  _aPP = B; _aPPpos = pos; return B;
+}
+function _aCollRadius() { var el = document.getElementById('aplot-coll'); return el ? Math.max(0, parseFloat(el.value) || 0) : 60; }
+function _aCollides(angles, i) {
+  var pos = _aPos(); if (i < 0 || i >= pos.length) return false;
+  var B = _aPartPrefix(pos), o = i * 6, pts = fkAll(angles).pts, R = _aCollRadius();
+  function hit(P, r) {
+    var dx = Math.max(B[o] - P[0], 0, P[0] - B[o+3]), dy = Math.max(B[o+1] - P[1], 0, P[1] - B[o+4]), dz = Math.max(B[o+2] - P[2], 0, P[2] - B[o+5]);
+    return dx*dx + dy*dy + dz*dz < r*r;
+  }
+  for (let k = 0; k < pts.length - 1; k++) {
+    var A = pts[k], E = pts[k+1], tool = k === pts.length - 2;
+    var L = Math.hypot(E[0]-A[0], E[1]-A[1], E[2]-A[2]); if (L < 1e-6) continue;
+    var r = tool ? 20 : R, end = tool ? Math.max(0, L - 40) : L, n = Math.max(1, Math.ceil(end / 20));
+    for (let s = 0; s <= n; s++) {
+      var f = (end * s / n) / L;
+      if (hit([A[0] + (E[0]-A[0])*f, A[1] + (E[1]-A[1])*f, A[2] + (E[2]-A[2])*f], r)) return true;
+    }
+  }
+  return false;
+}
+
 // strict: Achsen laufen stetig von initQ weiter (keine ±360°-Ausweichkopie)
-function _aClassify(p, a, initQ, strict) {
+// iPart: Index des Bahnpunkts für die Kollisionsprüfung (-1 = keine)
+function _aClassify(p, a, initQ, strict, iPart) {
   var analytic = ikAnalyticSupported();
   var an = analytic ? solveIKAnalytic(p.X, p.Y, p.Z, a, p.B, p.C, initQ, strict) : null;
   if (an && !an.ok) return { code: CELL_LIMIT, angles: null };
@@ -2455,6 +2506,7 @@ function _aClassify(p, a, initQ, strict) {
   var res = (an && an.ok) ? an : solveIKPrecise(p.X, p.Y, p.Z, a, p.B, p.C, initQ);
   if (!res || !res.ok) return { code: CELL_REACH, angles: null };
   var m = classifySingTypes(res.angles).reduce(function(acc, k) { return acc | SING_BIT[k]; }, 0);
+  if (iPart !== undefined && iPart >= 0 && _aCollides(res.angles, iPart)) m |= CELL_COLL;
   return { code: m, angles: res.angles };
 }
 
@@ -2522,7 +2574,7 @@ function _aColumnCodes(nCol) {
   return out;
 }
 function _aMapImage(nCol) {
-  var key = nCol + '|' + _aLayers.reach + _aLayers.limit + _aLayers.sing;
+  var key = nCol + '|' + _aLayers.reach + _aLayers.limit + _aLayers.sing + _aLayers.coll;
   if (_aMapImg && _aMapImgKey === key) return _aMapImg;
   var nA = _aMap.nA, codes = _aColumnCodes(nCol);
   var cv = document.createElement('canvas'); cv.width = nCol; cv.height = nA;
@@ -2531,6 +2583,7 @@ function _aMapImage(nCol) {
     var code = codes[c*nA + s], col = null;
     if ((code & CELL_REACH) && _aLayers.reach) col = AMAP_COL.reach;
     else if ((code & CELL_LIMIT) && _aLayers.limit) col = AMAP_COL.limit;
+    else if ((code & CELL_COLL) && _aLayers.coll) col = AMAP_COL.coll;
     else if ((code & CELL_SING) && _aLayers.sing) col = AMAP_COL.sing;
     if (!col) continue;
     var o = ((nA - 1 - s) * nCol + c) * 4;
@@ -2695,11 +2748,11 @@ function aPlotStartScan() {
       // der vorigen Spalte. Eine waagerechte Linie in der Karte entspricht so genau der Roboterbewegung.
       // Zeilen ohne Vorgänger werden stetig von der Nachbarzeile aus gefüllt; fehlt alles (erste Spalte oder
       // Spalte nach vollständig gesperrter Spalte), beginnt die Spalte bei der Achsstellung des Programms.
-      var t = targets[si], p = t.p, code = new Uint8Array(nA), done = new Uint8Array(nA), qs = new Array(nA).fill(null), r;
+      var t = targets[si], p = t.p, code = new Uint8Array(nA), done = new Uint8Array(nA), qs = new Array(nA).fill(null), r, ic = _aNearestIdx(t.d);
       var havePrev = prevQs && prevQs.some(function(q) { return q; });
       if (havePrev) {
         for (let s = 0; s < nA; s++) if (prevQs[s]) {
-          r = _aClassify(p, AMAP_MIN + s * astep, prevQs[s], true);
+          r = _aClassify(p, AMAP_MIN + s * astep, prevQs[s], true, ic);
           code[s] = r.code; done[s] = 1; qs[s] = r.angles;
         }
       } else {
@@ -2708,21 +2761,21 @@ function aPlotStartScan() {
         for (let dir = 1; dir >= -1; dir -= 2) {
           var qa = _aStartQ(i0);
           for (let s = dir > 0 ? s0 : s0 - 1; s >= 0 && s < nA; s += dir) {
-            r = _aClassify(p, AMAP_MIN + s * astep, qa, false);
+            r = _aClassify(p, AMAP_MIN + s * astep, qa, false, ic);
             code[s] = r.code; done[s] = 1; qs[s] = r.angles; if (r.angles) qa = r.angles;
           }
         }
       }
       for (let s = 1; s < nA; s++) if (!done[s] && qs[s-1]) {
-        r = _aClassify(p, AMAP_MIN + s * astep, qs[s-1], true); code[s] = r.code; done[s] = 1; qs[s] = r.angles;
+        r = _aClassify(p, AMAP_MIN + s * astep, qs[s-1], true, ic); code[s] = r.code; done[s] = 1; qs[s] = r.angles;
       }
       for (let s = nA - 2; s >= 0; s--) if (!done[s] && qs[s+1]) {
-        r = _aClassify(p, AMAP_MIN + s * astep, qs[s+1], true); code[s] = r.code; done[s] = 1; qs[s] = r.angles;
+        r = _aClassify(p, AMAP_MIN + s * astep, qs[s+1], true, ic); code[s] = r.code; done[s] = 1; qs[s] = r.angles;
       }
       // Zeilen ohne erreichbaren Nachbarn: von irgendeiner gültigen Stellung der Spalte aus prüfen
       var anyQ = qs.find(function(q) { return q; }) || _aStartQ(_aNearestIdx(t.d));
       for (let s = 0; s < nA; s++) if (!done[s]) {
-        r = _aClassify(p, AMAP_MIN + s * astep, anyQ, true); code[s] = r.code; qs[s] = r.angles;
+        r = _aClassify(p, AMAP_MIN + s * astep, anyQ, true, ic); code[s] = r.code; qs[s] = r.angles;
       }
       prevQs = qs;
       samples.push({ d:t.d, code:code });
@@ -2874,8 +2927,8 @@ function _aVerifyStart() {
     if (id !== _aVerifyId) return;
     var tEnd = performance.now() + 15;
     for (; i < N && performance.now() < tEnd; i++) {
-      var p = pos[i], r = _aClassify(p, _aPathA(_aPlotDists[i]), q, i > 0), k = 0;
-      if (r.code & CELL_REACH) k = 1; else if (r.code & CELL_LIMIT) k = 2; else if (r.code & CELL_SING) k = 3;
+      var p = pos[i], r = _aClassify(p, _aPathA(_aPlotDists[i]), q, i > 0, i), k = 0;
+      if (r.code & CELL_REACH) k = 1; else if (r.code & CELL_LIMIT) k = 2; else if (r.code & CELL_COLL) k = 5; else if (r.code & CELL_SING) k = 3;
       if (r.angles) {
         if (!k && i > 0) { for (let j = 0; j < 6; j++) if (Math.abs(r.angles[j] - q[j]) > 45) { k = 4; break; } }
         q = r.angles;
@@ -2969,6 +3022,7 @@ function aPlotLivePreview(idx, newA) {
     var code = S[k].code[Math.round((a - AMAP_MIN) / _aMap.astep)];
     if (code & CELL_REACH) return 'unerreichbar';
     if (code & CELL_LIMIT) return 'Achsgrenze';
+    if (code & CELL_COLL) return 'Kollision mit Bauteil';
     if (code & CELL_SING) return 'singulär (' + ['wrist','shoulder','elbow'].filter(function(t) { return code & SING_BIT[t]; })
       .map(function(t) { return { wrist:'Handgelenk', shoulder:'Schulter', elbow:'Ellbogen' }[t]; }).join(', ') + ')';
     return 'frei';

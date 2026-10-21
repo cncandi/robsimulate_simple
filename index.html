@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261021q">
+<link rel="stylesheet" href="./css/simulator.css?v=20261021s">
 </head>
 <body>
 
@@ -194,6 +194,7 @@
       <label><input type="checkbox" checked onchange="aPlotLayer('reach',this.checked)"><i style="background:rgb(110,18,32)"></i>Unerreichbar</label>
       <label><input type="checkbox" checked onchange="aPlotLayer('limit',this.checked)"><i style="background:rgb(222,40,82)"></i>Achsgrenze</label>
       <label><input type="checkbox" checked onchange="aPlotLayer('sing',this.checked)"><i style="background:rgb(235,196,50)"></i>Singularität</label>
+      <label><input type="checkbox" checked onchange="aPlotLayer('coll',this.checked)"><i style="background:rgb(255,140,26)"></i>Kollision</label>
       <label><input type="checkbox" checked onchange="aPlotLayer('prog',this.checked)"><i class="dash"></i>Programm-A</label>
       <label><input type="checkbox" checked onchange="aPlotLayer('path',this.checked)"><i style="background:#3ddc84"></i>Weg (grün)</label>
       <div class="side-h">Einstellungen</div>
@@ -202,6 +203,7 @@
       <div class="side-row"><span>A-Schritt</span><select id="aplot-astep" class="inp">
         <option value="6">6°</option><option value="3" selected>3°</option><option value="2">2°</option></select></div>
       <div class="side-row"><span>Abstand</span><input id="aplot-safe" class="inp" type="number" value="12" min="0" max="90" step="3"><span class="u">°</span></div>
+      <div class="side-row" title="Radius der Roboterglieder für die Kollisionsprüfung gegen das gedruckte Teil"><span>Kollision</span><input id="aplot-coll" class="inp" type="number" value="60" min="0" max="300" step="10"><span class="u">mm</span></div>
       <div class="side-h">Verifikation</div>
       <div id="aplot-verify">—</div>
       <div class="side-help">Knoten ziehen · auf Linie ziehen fügt Knoten ein · Rechtsklick löscht Knoten · Klick setzt Simulation</div>
@@ -233,7 +235,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261021q"></script>
-<script src="./js/simulator.js?v=20261021q"></script>
+<script src="./js/dp-solver.js?v=20261021s"></script>
+<script src="./js/simulator.js?v=20261021s"></script>
 </body>
 </html>
