@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RobSimul Simple · cnc-technik.de</title>
+<link rel="stylesheet" href="./css/simulator.css">
+<style>
+/* ── Menüleiste ──────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 10px 0 0;
+  height: 36px;
+  min-height: 36px;
+  border-bottom: 1px solid var(--bdr);
+  background: var(--bg4);
+}
+header .appname {
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--acc);
+  letter-spacing: 1px;
+  padding: 0 14px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--bdr);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+header .appname span { color: var(--txt3); font-weight: 400; font-size: .8em; margin-left: 5px; }
+
+/* menu bar */
+nav.menubar { display: flex; align-items: stretch; height: 100%; }
+.mnu { position: relative; height: 100%; }
+.mnubtn {
+  height: 100%;
+  background: none;
+  border: none;
+  color: var(--txt2);
+  font-family: monospace;
+  font-size: 12px;
+  padding: 0 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .1s, color .1s;
+}
+.mnubtn:hover, .mnu.open .mnubtn {
+  background: var(--acc);
+  color: #fff;
+}
+/* dropdown */
+.mnudrop {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 210px;
+  background: var(--bg4);
+  border: 1px solid var(--bdr);
+  border-top: 2px solid var(--acc);
+  box-shadow: 0 6px 24px rgba(0,0,0,.7);
+  z-index: 9000;
+  padding: 4px 0;
+}
+.mnu.open .mnudrop { display: block; }
+.mnudrop button, .mnudrop label.mnuitem {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--txt2);
+  font-family: monospace;
+  font-size: 12px;
+  padding: 6px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .1s, color .1s;
+  box-sizing: border-box;
+}
+.mnudrop button:hover, .mnudrop label.mnuitem:hover { background: rgba(255,138,0,.12); color: var(--txt); }
+.mnudrop button:disabled { opacity: .35; cursor: not-allowed; }
+.mnudrop button:disabled:hover { background: none; color: var(--txt2); }
+.mnusep { height: 1px; background: var(--bdr); margin: 3px 0; }
+
+/* right side quick buttons */
+.mnu-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.mnu-right button {
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--bdr);
+  color: var(--txt2);
+  font-family: monospace;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background .1s, color .1s;
+}
+.mnu-right button:hover { background: rgba(255,255,255,.1); color: var(--txt); }
+/* hide old toolbar class if still referenced */
+header .toolbar { display: none !important; }
+header .title    { display: none !important; }
+
+/* slider in dropdown */
+.mnuslider {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 16px;
+  color: var(--txt2);
+  font-family: monospace;
+  font-size: 12px;
+  cursor: default;
+}
+.mnuslider input[type=range] {
+  width: 80px;
+  accent-color: #60a5fa;
+  cursor: pointer;
+}
+/* active state for data-view and toggle buttons in dropdown */
+.mnudrop button.active,
+.mnudrop button[data-view].active {
+  color: var(--acc);
+  background: rgba(255,122,0,.1);
+}
+
+
+/* SVG icon system */
+.ico{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle;flex-shrink:0;display:inline-block;margin-right:6px;position:relative;top:-1px}
+.mnudrop button,.mnudrop label.mnuitem{display:flex;align-items:center}
+.mnu-right button{display:flex;align-items:center;gap:5px}
+.appname .ico{margin-right:6px;width:15px;height:15px}
+
+/* SVG icon system */
+.ico{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle;flex-shrink:0;display:inline-block;margin-right:6px;position:relative;top:-1px}
+.mnudrop button,.mnudrop label.mnuitem{display:flex;align-items:center}
+.mnu-right button{display:flex;align-items:center;gap:5px}
+.appname .ico{margin-right:6px;width:15px;height:15px}
+
+/* ── Slim toolbar ──────────────────────────────────────────── */
+.tb{background:var(--bg1);border-bottom:1px solid var(--bdr);padding:2px 8px;display:flex;align-items:center;gap:3px;flex-wrap:nowrap;overflow-x:auto;min-height:32px}
+.tb::-webkit-scrollbar{height:0}
+.sbtn{background:var(--bg2);color:var(--txt2);border:1px solid var(--bdr);border-radius:2px;padding:2px 7px;font-size:12px;font-family:monospace;cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;flex-shrink:0}
+.sbtn:hover:not(:disabled){background:var(--bg3)}
+.sbtn.on{background:var(--acc)!important;color:#fff!important;border-color:#c04200!important}
+.sbtn:disabled{opacity:.25;cursor:not-allowed}
+.sbtn.g{color:var(--ok)}.sbtn.r{color:var(--err)}.sbtn.y{color:var(--warn)}
+.sbtn.icon-only{padding:2px 5px}
+.sep{width:1px;height:18px;background:var(--bdr);margin:0 3px;flex-shrink:0}
+.slbl{font-size:.68em;color:var(--txt3);white-space:nowrap;flex-shrink:0}
+.sv{font-size:.75em;color:var(--txt2);font-family:monospace;white-space:nowrap;flex-shrink:0}
+.ss{flex-shrink:0}
+.sstatus{font-family:monospace;font-size:.7em;padding:2px 7px;border-radius:2px;border:1px solid}
+.sstatus.stopped{color:#f87171;border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.07)}
+.sstatus.running{color:#4ade80;border-color:rgba(74,222,128,.3);background:rgba(74,222,128,.07)}
+.sstatus.paused{color:#facc15;border-color:rgba(250,204,21,.3);background:rgba(250,204,21,.07)}
+/* SVG icons */
+.ico{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle;flex-shrink:0;display:inline-block}
+.ico-sm{width:11px;height:11px}
+
+/* ── Ribbon ─────────────────────────────────────────────────── */
+.ribbon{display:flex;align-items:stretch;background:var(--bg3);border-bottom:1px solid var(--bdr);padding:0 6px;gap:0;min-height:58px;flex-shrink:0}
+.rib-group{display:flex;align-items:stretch;gap:1px;padding:4px 6px 18px;position:relative}
+.rib-group+.rib-group::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:1px;background:var(--bdr)}
+.rib-group-label{position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:.6em;color:var(--txt3);letter-spacing:.05em;text-transform:uppercase;pointer-events:none}
+.rib-btn{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:3px;background:none;border:none;border-radius:3px;padding:5px 7px 0;cursor:pointer;color:var(--txt2);font-family:monospace;font-size:.68em;white-space:nowrap;min-width:38px;transition:background .1s,color .1s;position:relative}
+.rib-btn:hover{background:rgba(255,255,255,.07);color:var(--txt)}
+.rib-btn.on{background:rgba(30,144,255,.12);color:#1e90ff}
+.rib-btn:disabled{opacity:.3;cursor:not-allowed}
+.rib-btn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.rib-btn svg.filled{fill:currentColor;stroke:none}
+
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+<symbol id="s-new"      viewBox="0 0 16 16"><path d="M9 2H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6z"/><path d="M9 2v4h4"/><path d="M8 8v4M6 10h4" stroke-width="1.2"/></symbol>
+<symbol id="s-open"     viewBox="0 0 16 16"><path d="M1 5h4l1.5-2H14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1z"/></symbol>
+<symbol id="s-save"     viewBox="0 0 16 16"><path d="M3 2h8l3 3v9H2V2z"/><path d="M5 2v4h6V2"/><path d="M4 10h8M4 13h8"/></symbol>
+<symbol id="s-skip-s"   viewBox="0 0 16 16"><rect x="1.5" y="4" width="1.5" height="8" fill="currentColor" stroke="none"/><polygon points="4,8 11,4 11,12" fill="currentColor" stroke="none"/></symbol>
+<symbol id="s-skip-e"   viewBox="0 0 16 16"><rect x="13" y="4" width="1.5" height="8" fill="currentColor" stroke="none"/><polygon points="12,8 5,4 5,12" fill="currentColor" stroke="none"/></symbol>
+<symbol id="s-play-b"   viewBox="0 0 16 16"><polygon points="4,8 12,4 12,12" fill="currentColor" stroke="none"/></symbol>
+<symbol id="s-play-f"   viewBox="0 0 16 16"><polygon points="12,8 4,4 4,12" fill="currentColor" stroke="none"/></symbol>
+<symbol id="s-step-b"   viewBox="0 0 16 16"><rect x="9.5" y="4" width="1.5" height="8" fill="currentColor" stroke="none"/><polygon points="4,8 9,5 9,11" fill="currentColor" stroke="none"/></symbol>
+<symbol id="s-step-f"   viewBox="0 0 16 16"><rect x="5" y="4" width="1.5" height="8" fill="currentColor" stroke="none"/><polygon points="12,8 7,5 7,11" fill="currentColor" stroke="none"/></symbol>
+<symbol id="s-stop"     viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></symbol>
+<symbol id="s-clock"    viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2"/></symbol>
+<symbol id="s-robot"    viewBox="0 0 16 16"><rect x="4" y="6" width="8" height="7" rx="1"/><rect x="5" y="3" width="6" height="3" rx="1"/><path d="M5 13v2M11 13v2M1 8h3M12 8h3"/><circle cx="6" cy="9" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="9" r=".8" fill="currentColor" stroke="none"/></symbol>
+<symbol id="s-trace"    viewBox="0 0 16 16"><path d="M2 13C4 10 5 6 8 5s5 3 6 5"/><circle cx="2" cy="13" r="1.2" fill="currentColor" stroke="none"/><circle cx="14" cy="10" r="1.2" fill="currentColor" stroke="none"/></symbol>
+<symbol id="s-palette"  viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="4" r="1" fill="currentColor" stroke="none"/><circle cx="11.5" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="11.5" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none"/></symbol>
+<symbol id="s-gear"     viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.1 3.1l1.4 1.4M11.5 11.5l1.4 1.4M3.1 12.9l1.4-1.4M11.5 4.5l1.4-1.4"/></symbol>
+<symbol id="s-trash"    viewBox="0 0 16 16"><path d="M3 4h10M6 4V2h4v2M5 4v9a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V4"/><path d="M7 7v4M9 7v4"/></symbol>
+<symbol id="s-reset"    viewBox="0 0 16 16"><path d="M3 8A5 5 0 1 1 5 4"/><path d="M1 2v4h4"/></symbol>
+<symbol id="s-monitor"  viewBox="0 0 16 16"><rect x="1" y="2" width="14" height="10" rx="1"/><path d="M5 14h6M8 12v2"/></symbol>
+<symbol id="s-chart"    viewBox="0 0 16 16"><path d="M2 13l3-4 3 2 3-5 3 2"/><path d="M2 13h12"/></symbol>
+<symbol id="s-grid"     viewBox="0 0 16 16"><path d="M1 5h14M1 10h14M5 1v14M10 1v14" stroke-width="1.2"/></symbol>
+<symbol id="s-help"     viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M6 6.5a2 2 0 0 1 4 .5c0 2-2 2-2 3"/><circle cx="8" cy="12" r=".7" fill="currentColor" stroke="none"/></symbol>
+<symbol id="s-key"      viewBox="0 0 16 16"><path d="M2 10a4 4 0 1 1 8 0 4 4 0 0 1-8 0z"/><path d="M9 7l5 5M12 10l2 2"/></symbol>
+<symbol id="s-mapping"  viewBox="0 0 16 16"><path d="M3 4h10M3 8h6M3 12h8"/><path d="M11 6l3 2-3 2"/></symbol>
+<symbol id="s-lib"      viewBox="0 0 16 16"><rect x="2" y="2" width="3" height="12" rx="1"/><rect x="7" y="4" width="3" height="10" rx="1"/><rect x="12" y="2" width="3" height="12" rx="1"/></symbol>
+<symbol id="s-iso"    viewBox="0 0 16 16"><path d="M8 1l7 4v6l-7 4-7-4V5z"/><path d="M8 1v10M1 5l7 4 7-4"/></symbol>
+<symbol id="s-vtop"   viewBox="0 0 16 16"><path d="M8 12V4M4 8l4-4 4 4"/><path d="M3 13h10" stroke-width="1.5"/></symbol>
+<symbol id="s-vbot"   viewBox="0 0 16 16"><path d="M8 4v8M4 8l4 4 4-4"/><path d="M3 3h10" stroke-width="1.5"/></symbol>
+<symbol id="s-vfront" viewBox="0 0 16 16"><path d="M4 8h8M8 4l4 4-4 4"/><path d="M3 2v12" stroke-width="1.5"/></symbol>
+<symbol id="s-vback"  viewBox="0 0 16 16"><path d="M12 8H4M8 4 4 8l4 4"/><path d="M13 2v12" stroke-width="1.5"/></symbol>
+<symbol id="s-vleft"  viewBox="0 0 16 16"><path d="M10 8H2M6 4 2 8l4 4"/><path d="M13 3v10" stroke-width="1.5"/></symbol>
+<symbol id="s-vright" viewBox="0 0 16 16"><path d="M6 8h8M10 4l4 4-4 4"/><path d="M3 3v10" stroke-width="1.5"/></symbol>
+<symbol id="s-ortho"  viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M2 10h12M6 2v12M10 2v12" stroke-width="1"/></symbol>
+</svg>
+<header>
+  <div class="appname"><svg class="ico"><use href="#s-robot"/></svg> RobSimul&nbsp;<span style="color:var(--txt2);font-weight:400">Simple</span>&nbsp;<span id="ver-header" class="ver-tag"></span></div>
+  <button class="simple-hbtn" onclick="openLibPickerModal('robot')" title="Robotermodell aus der Bibliothek wählen">
+    <svg class="ico"><use href="#s-robot"/></svg>Roboter wählen
+  </button>
+  <span class="simple-robot-lbl">Aktiv: <b id="simple-robot-name">Standardmodell</b></span>
+  <div class="mnu-right">
+    <span style="color:var(--txt3);font-size:.72em">© CAD/CAM Systeme Datentechnik Reitz</span>
+  </div>
+</header>
+
+<!-- ── TOOLBAR ──────────────────────────────────────────── -->
+<div class="tb">
+  <button class="sbtn" id="rib-editor" onclick="toggleLeftPanel()" title="Editor ein/ausblenden" style="min-width:60px"><svg class="ico"><use href="#s-open"/></svg>Editor</button>
+  <div class="sep"></div>
+  <button class="sbtn icon-only" id="b-start"   title="Zum Anfang [Home]"><svg class="ico"><use href="#s-skip-s"/></svg></button>
+  <button class="sbtn icon-only" id="b-playrev"  title="Rückwärts"><svg class="ico"><use href="#s-play-b"/></svg></button>
+  <button class="sbtn icon-only" id="b-steprev"  title="Schritt zurück [←]"><svg class="ico"><use href="#s-step-b"/></svg></button>
+  <button class="sbtn icon-only r" id="b-stop"   title="Stop [Space]"><svg class="ico"><use href="#s-stop"/></svg></button>
+  <button class="sbtn icon-only g" id="b-stepfwd" title="Schritt vor [→]"><svg class="ico"><use href="#s-step-f"/></svg></button>
+  <button class="sbtn icon-only g" id="b-playfwd" title="Vorwärts [F5]"><svg class="ico"><use href="#s-play-f"/></svg></button>
+  <button class="sbtn icon-only" id="b-end"      title="Zum Ende [End]"><svg class="ico"><use href="#s-skip-e"/></svg></button>
+  <div class="sep"></div>
+  <span class="slbl">Speed</span>
+  <input type="range" class="ss" id="spd-s" min="1" max="100" value="40" style="width:70px">
+  <span class="sv" id="spd-v">40%</span>
+  <button id="btn-realtime" class="sbtn" title="Echtzeit-Simulation" onclick="toggleRealtime()" style="padding:2px 5px"><svg class="ico"><use href="#s-clock"/></svg></button>
+  <div class="sep"></div>
+  <span class="slbl">Step</span>
+  <input type="range" class="ss" id="pos-s" min="0" max="1" value="0" step="0.001" style="width:120px">
+  <span class="sv" id="pos-v">— / —</span>
+  <div class="sep"></div>
+  <span class="slbl" id="tcp-vel-lbl">TCP</span>
+  <span class="sv" id="tcp-vel-v" style="min-width:72px">0 mm/s</span>
+  <div class="sep"></div>
+  <span class="sstatus stopped" id="sim-status">STOPPED</span>
+  <span style="flex:1"></span>
+  <button class="sbtn" id="rib-aplot" onclick="toggleAPlot()" title="A-Winkel Map ein/ausblenden"><svg class="ico"><use href="#s-chart"/></svg>A-Plot</button>
+  <button class="sbtn" onclick="setView('iso')" title="Ansicht zurücksetzen (ISO)"><svg class="ico"><use href="#s-iso"/></svg>ISO</button>
+</div>
+
+<div class="main">
+  <!-- EDITOR -->
+  <div class="ep">
+    <div class="pt">
+      <span id="editor-lang-label">KUKA KRL</span>
+      <span style="flex:1"></span>
+    </div>
+    <div class="ew">
+      <div id="gutter"></div>
+      <textarea id="code-input" spellcheck="false" wrap="off"></textarea>
+    </div>
+    <div style="display:flex;gap:4px;padding:4px 5px 0;flex-shrink:0">
+      <button class="sbtn" onclick="saveProgram()" style="flex:1" title="Programm als .src speichern"><svg class="ico"><use href="#s-save"/></svg>Speichern</button>
+      <button class="sbtn" onclick="loadProgram()" style="flex:1" title="KRL-Datei (.src) öffnen"><svg class="ico"><use href="#s-open"/></svg>Öffnen</button>
+      <input type="file" id="prog-file-in" accept=".src,.krl,.txt" style="display:none">
+    </div>
+    <button id="parse-btn">▶  PARSE &amp; LOAD</button>
+  </div>
+
+  <!-- VIEWPORT -->
+  <button id="ep-toggle-btn" onclick="toggleLeftPanel()" title="Code-Panel ein/ausblenden" style="width:18px;flex-shrink:0;background:var(--bg3);border:none;border-top:1px solid var(--acc);border-bottom:1px solid var(--acc);color:var(--acc);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;border-right:1px solid var(--acc)">◀</button>
+  <div id="ep-resize-handle" class="ep-resize-handle"></div>
+  <div class="vp">
+    <canvas id="c3d"></canvas>
+    <div class="legend">
+      <div class="lrow"><div class="lbar" style="background:#ff4444"></div>X</div>
+      <div class="lrow"><div class="lbar" style="background:#44ff44"></div>Y</div>
+      <div class="lrow"><div class="lbar" style="background:#4488ff"></div>Z</div>
+    </div>
+    <div id="edit-panel">
+      <span class="ep-close" id="ep-close">✕</span>
+      <h3 id="ep-title">Position #—</h3>
+      <div class="ep-grid">
+        <span class="ep-lbl">X</span><input class="ep-inp" id="ep-x" type="number" step="0.1" oninput="liveEditUpdate()"><span class="ep-unit">mm</span>
+        <span class="ep-lbl">Y</span><input class="ep-inp" id="ep-y" type="number" step="0.1" oninput="liveEditUpdate()"><span class="ep-unit">mm</span>
+        <span class="ep-lbl">Z</span><input class="ep-inp" id="ep-z" type="number" step="0.1" oninput="liveEditUpdate()"><span class="ep-unit">mm</span>
+        <span class="ep-lbl">A(Z)</span><input class="ep-inp" id="ep-a" type="number" step="0.1" oninput="liveEditUpdate()"><span class="ep-unit">°</span>
+        <span class="ep-lbl">B(Y)</span><input class="ep-inp" id="ep-b" type="number" step="0.1" oninput="liveEditUpdate()"><span class="ep-unit">°</span>
+        <span class="ep-lbl">C(X)</span><input class="ep-inp" id="ep-c" type="number" step="0.1" oninput="liveEditUpdate()"><span class="ep-unit">°</span>
+      </div>
+      <div class="ep-btns">
+        <button class="ep-btn" onclick="applyEditPanel()">✓ Apply</button>
+      </div>
+      <!-- Navigation -->
+      <div class="ep-nav">
+        <button class="ep-btn ep-nav-btn" onclick="epNavFirst()" title="Zum ersten Punkt">|◀</button>
+        <button class="ep-btn ep-nav-btn" onclick="epNavPrev()"  title="Vorheriger Punkt">◀</button>
+        <span id="ep-nav-info" class="ep-nav-info">—</span>
+        <button class="ep-btn ep-nav-btn" onclick="epNavNext()"  title="Nächster Punkt">▶</button>
+        <button class="ep-btn ep-nav-btn" onclick="epNavLast()"  title="Zum letzten Punkt">▶|</button>
+      </div>
+      <!-- IK Solutions in edit panel -->
+      <div id="ep-ik-solutions" style="margin-top:8px;display:none">
+        <div style="font-size:.85em;color:var(--txt3);border-top:1px solid var(--bdr);padding-top:6px;margin-bottom:5px">IK-Lösungen:</div>
+        <div id="ep-ik-list"></div>
+      </div>
+    </div>
+
+    <!-- Steuerungspanel -->
+    <div id="steuer-panel">
+      <div class="sp-hdr" id="steuer-hdr">
+        <span class="sp-indicator" id="sp-indicator"></span>
+        <span class="sp-hdr-title" data-i18n="ctrlpanel">Steuerungspanel</span>
+        <span class="sp-close" onclick="toggleSteuerPanel()">✕</span>
+      </div>
+      <div class="sp-body" style="overflow-y:auto;max-height:calc(90vh - 40px)">
+        <div class="sp-sec-title" data-i18n="phyaxes">Physische Achsen</div>
+        <div id="sp-axes"></div>
+        <hr class="sp-divider">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:.75em;font-weight:bold;color:#c8d8e8">TCP</span>
+          <span class="sp-indicator"></span>
+        </div>
+        <div class="sp-tcp-grid" style="margin-bottom:6px">
+          <span class="sp-tcp-lbl">X:</span><span class="sp-tcp-val" id="sp-x">—</span>
+          <span class="sp-tcp-lbl">A(Z)</span><span class="sp-tcp-val" id="sp-a">—</span>
+          <span class="sp-tcp-lbl">Y:</span><span class="sp-tcp-val" id="sp-y">—</span>
+          <span class="sp-tcp-lbl">B(Y)</span><span class="sp-tcp-val" id="sp-b">—</span>
+          <span class="sp-tcp-lbl">Z:</span><span class="sp-tcp-val" id="sp-z">—</span>
+          <span class="sp-tcp-lbl">C(X)</span><span class="sp-tcp-val" id="sp-c">—</span>
+        </div>
+        <div id="jog-status" style="font-size:.68em;color:#3a6080;min-height:14px;margin-bottom:4px"></div>
+        <hr class="sp-divider">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+          <span style="font-size:.72em;color:#2a4060;flex:1" data-i18n="feedrate">Jog-Vorschub [mm/min]</span>
+          <input class="sp-jog-inp" id="jog-feed" type="number" value="10000" step="100" style="width:65px">
+        </div>
+        <div style="font-size:.68em;color:#3a6080;margin-bottom:3px" data-i18n="insert_stmt">Satz einfügen (vor END):</div>
+        <div style="display:flex;gap:4px">
+          <button class="sp-jog-btn" onclick="insertPTP()" style="flex:1" title="PTP mit aktuellen Achswinkeln" data-i18n="ins_ptp">+ PTP</button>
+          <button class="sp-jog-btn" onclick="insertLIN()" style="flex:1" title="LIN mit aktuellem TCP" data-i18n="ins_lin">+ LIN</button>
+        </div>
+      </div>
+    </div>
+    <div id="marker-info"></div>
+    <div class="scene-hint" data-i18n="hint">LMB: Orbit / Pos. ziehen &nbsp;|&nbsp; RMB: Pan &nbsp;|&nbsp; Wheel: Zoom &nbsp;|&nbsp; Pos. klicken = auswählen</div>
+    <!-- robot status bar -->
+    <div id="robot-bar">
+      <span class="rb-dim">Achsen:</span>
+      <span class="rb-val">A1 <span id="rb-a1">0.0</span>°</span>
+      <span class="rb-val">A2 <span id="rb-a2">-90.0</span>°</span>
+      <span class="rb-val">A3 <span id="rb-a3">90.0</span>°</span>
+      <span class="rb-val">A4 <span id="rb-a4">0.0</span>°</span>
+      <span class="rb-val">A5 <span id="rb-a5">0.0</span>°</span>
+      <span class="rb-val">A6 <span id="rb-a6">0.0</span>°</span>
+      <span class="rb-dim" style="margin-left:auto">FK-Δ:</span>
+      <span class="rb-val"><span id="rb-fk">—</span> mm</span>
+    </div>
+  </div>
+
+  <!-- INFO PANEL -->
+  <div id="ip-resize-handle" class="ip-resize-handle" style="display:none"></div>
+  <button id="ip-toggle-btn" onclick="toggleRightPanel()" title="Info-Panel ein/ausblenden" style="display:none!important;width:18px;flex-shrink:0;background:var(--bg3);border:none;border-top:1px solid var(--acc);border-bottom:1px solid var(--acc);color:var(--acc);font-size:16px;cursor:pointer;align-items:center;justify-content:center;padding:0;border-left:1px solid var(--acc)">▶</button>
+  <div class="info-panel" id="info-panel" style="display:none">
+    <!-- Kinematics -->
+    <div id="sec-kin" class="sec collapsed">
+      <div class="sec-t" onclick="toggleSec(this)"><span class="tog">▼</span data-i18n="kin_sec">⚙ Kinematik</div>
+      <div class="sec-b">
+        <!-- Name + New/Load/Save -->
+        <div style="display:flex;gap:4px;margin-bottom:6px">
+          <button class="sbtn" onclick="openLibPickerModal('all')" style="flex:1;background:rgba(255,96,0,.15);border-color:#ff6000;color:#ff6000;font-size:1em;padding:10px" title="Roboter aus ROBLIB laden">📚 Bibliothek</button>
+          <input type="file" id="kin-file-in" accept=".zip,.json,.xml" style="display:none">
+          <input id="kin-name" type="text" style="display:none" value="KR8 R1420 HW">
+        </div>
+        <div style="font-size:.85em;color:var(--txt3);margin-bottom:4px;padding:0 2px;font-weight:bold">Achsgrenzen [°]</div>
+        <div id="kin-section" style="scroll-margin-top:4px"></div>
+        <div id="joint-limits-ui"></div>
+        <div style="font-size:.85em;color:var(--txt3);margin-top:8px;margin-bottom:4px;padding:0 2px;font-weight:bold">Link-Offsets [mm] · Robot CS</div>
+        <div id="joint-offsets-ui" style="margin-top:2px"></div>
+        <button class="sbtn" onclick="applyKinematicConfig()" style="width:calc(100% - 10px);margin:5px" data-i18n="applykin">▶ Kinematik übernehmen</button>
+        <div id="eff-nr-ui" style="display:none;padding:0 5px"></div>
+        <div style="font-size:.85em;color:var(--txt3);margin-top:10px;margin-bottom:4px;padding:0 2px;font-weight:bold">STL Achsmodelle</div>
+        <div id="axis-stl-ui"></div>
+        <input type="file" id="axis-stl-file" accept=".stl,.stp,.step" style="display:none">
+        <div style="display:flex;gap:4px;margin-top:5px">
+          <button class="sbtn" onclick="loadPedestalSTL()" style="flex:1">+ Umgebung STL</button>
+          <button class="stl-vis-btn" id="vis-pedestal" onclick="cycleSTLMode('pedestal')" title="Sichtbarkeit wechseln"></button>
+          <span id="pedestal-name" style="font-size:.7em;color:var(--txt3);align-self:center;overflow:hidden;white-space:nowrap;flex:2"></span>
+          <input type="file" id="pedestal-stl-file" accept=".stl,.stp,.step" style="display:none">
+        </div>
+
+
+      </div>
+    </div>
+    <!-- Robot Settings -->
+    <div id="sec-robot" class="sec collapsed">
+      <div class="sec-t" onclick="toggleSec(this)"><span class="tog">▼</span data-i18n="robo_set">🎨 Robot Einstellungen</div>
+      <div class="sec-b">
+        <div class="cfg-grid">
+          <div><div class="cfg-lbl">Link-Farbe</div><input type="color" class="cfg-color" id="cfg-link-col" value="#cc4400"></div>
+          <div><div class="cfg-lbl">Gelenk-Farbe</div><input type="color" class="cfg-color" id="cfg-joint-col" value="#e8a020"></div>
+          <div><div class="cfg-lbl">TCP-Farbe</div><input type="color" class="cfg-color" id="cfg-tcp-col" value="#ffee00"></div>
+          <div><div class="cfg-lbl">Path-Farbe</div><input type="color" class="cfg-color" id="cfg-path-col" value="#f05500"></div>
+        </div>
+        <div class="cfg-row">
+          <label data-i18n="showtrace">TCP Trace anzeigen</label>
+          <input type="checkbox" id="cfg-show-trace" checked>
+        </div>
+        <div class="cfg-row">
+          <label>Workspace-Hülle</label>
+          <input type="checkbox" id="cfg-show-ws">
+        </div>
+      </div>
+    </div>
+    <!-- TCP definition -->
+    <div class="sec collapsed">
+      <div class="sec-t" onclick="toggleSec(this)"><span class="tog">▼</span data-i18n="tcp_sec">🔧 TCP</div>
+      <div class="sec-b">
+        <!-- TCP Navigation -->
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
+          <button onclick="tcpNavTo(0)"          class="sbtn" id="tcp-nav-first" style="min-width:32px;font-size:14px">⏮</button>
+          <button onclick="tcpNavTo(tcpNavIdx-1)" class="sbtn" id="tcp-nav-prev"  style="min-width:32px;font-size:14px">◀</button>
+          <span id="tcp-nav-label" style="flex:1;text-align:center;font-size:12px;font-family:monospace;color:var(--txt2)">—</span>
+          <button onclick="tcpNavTo(tcpNavIdx+1)" class="sbtn" id="tcp-nav-next"  style="min-width:32px;font-size:14px">▶</button>
+          <button onclick="tcpNavTo(tcpList.length-1)" class="sbtn" id="tcp-nav-last" style="min-width:32px;font-size:14px">⏭</button>
+          <button onclick="tcpAddCurrent()"       class="sbtn" style="min-width:32px;font-size:14px;background:rgba(37,99,235,.2);border-color:rgba(37,99,235,.5);color:#60a5fa" title="Aktuellen TCP speichern">+</button>
+          <button onclick="tcpDelCurrent()"       class="sbtn" id="tcp-nav-del" style="min-width:32px;font-size:14px;background:rgba(204,51,51,.15);border-color:rgba(204,51,51,.4);color:#f87171" title="TCP löschen">✕</button>
+        </div>
+        <input id="tcp-name" type="text" placeholder="Name" oninput="tcpNameChanged(this.value)" style="width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:3px 6px;font-family:monospace;font-size:.82em;color:var(--txt);margin-bottom:6px;box-sizing:border-box">
+        <div style="font-size:.7em;color:var(--txt3);margin-bottom:4px">Position [mm] relativ zum Flansch:</div>
+        <div class="stl-grid" style="margin-bottom:5px">
+          <span class="stl-lbl">X</span><input class="stl-inp" id="tcp-x" type="number" oninput="if(tcpList[tcpNavIdx])tcpList[tcpNavIdx].x=parseFloat(this.value)||0;updateTCPDef()" value="364.5" step="1"><span class="stl-unit">mm</span>
+          <span class="stl-lbl">Y</span><input class="stl-inp" id="tcp-y" type="number" oninput="if(tcpList[tcpNavIdx])tcpList[tcpNavIdx].y=parseFloat(this.value)||0;updateTCPDef()" value="0" step="0.1"><span class="stl-unit">mm</span>
+          <span class="stl-lbl">Z</span><input class="stl-inp" id="tcp-z" type="number" oninput="if(tcpList[tcpNavIdx])tcpList[tcpNavIdx].z=parseFloat(this.value)||0;updateTCPDef()" value="46.5" step="1"><span class="stl-unit">mm</span>
+          <span class="stl-lbl">A(Z)</span><input class="stl-inp" id="tcp-a" type="number" oninput="if(tcpList[tcpNavIdx])tcpList[tcpNavIdx].a=parseFloat(this.value)||0;updateTCPDef()" value="0" step="1"><span class="stl-unit">°</span>
+          <span class="stl-lbl">B(Y)</span><input class="stl-inp" id="tcp-b" type="number" oninput="if(tcpList[tcpNavIdx])tcpList[tcpNavIdx].b=parseFloat(this.value)||0;updateTCPDef()" value="90" step="1"><span class="stl-unit">°</span>
+          <span class="stl-lbl">C(X)</span><input class="stl-inp" id="tcp-c" type="number" oninput="if(tcpList[tcpNavIdx])tcpList[tcpNavIdx].c=parseFloat(this.value)||0;updateTCPDef()" value="0" step="1"><span class="stl-unit">°</span>
+        </div>
+        <div style="display:none"><button class="sbtn on" onclick="updateTCPDef()" style="width:100%;background:var(--acc);color:#fff;border-color:#c04200;font-weight:bold" data-i18n="overnahme">▶ Übernehmen</button></div>
+        <div style="font-size:.7em;color:var(--txt3)">
+          <div style="display:none"><button class="sbtn" onclick="saveTCP()" style="flex:1">💾 TCP speichern</button><button class="sbtn" onclick="loadTCP()" style="flex:1">📂 TCP laden</button><input type="file" id="tcp-file-in" accept=".zip,.json,.xml" style="display:none"></div>
+          <button class="sbtn" onclick="loadToolFile()" style="display:none;width:100%;margin-top:3px">+ STL Werkzeug laden</button>
+          <input type="file" id="tool-file" accept=".stl">
+          <div id="tool-controls" style="display:none;margin-top:4px">
+            <div class="stl-name"><button class="stl-vis-btn" id="vis-tool" onclick="cycleSTLMode('tool')" title="Sichtbarkeit wechseln"></button><span id="tool-filename"></span><span class="del" onclick="removeToolSTL()">✕</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- BASE definition -->
+    <div class="sec collapsed">
+      <div class="sec-t" onclick="toggleSec(this)"><span class="tog">▼</span>📐 BASE</div>
+      <div class="sec-b">
+        <!-- BASE Navigation -->
+        <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
+          <button onclick="baseNavTo(0)"              class="sbtn" id="base-nav-first" style="min-width:32px;font-size:14px">⏮</button>
+          <button onclick="baseNavTo(baseNavIdx-1)"   class="sbtn" id="base-nav-prev"  style="min-width:32px;font-size:14px">◀</button>
+          <span id="base-nav-label" style="flex:1;text-align:center;font-size:12px;font-family:monospace;color:var(--txt2)">—</span>
+          <button onclick="baseNavTo(baseNavIdx+1)"   class="sbtn" id="base-nav-next"  style="min-width:32px;font-size:14px">▶</button>
+          <button onclick="baseNavTo(baseList.length-1)" class="sbtn" id="base-nav-last" style="min-width:32px;font-size:14px">⏭</button>
+          <button onclick="baseAddCurrent()"          class="sbtn" style="min-width:32px;font-size:14px;background:rgba(37,99,235,.2);border-color:rgba(37,99,235,.5);color:#60a5fa" title="Aktuelle BASE speichern">+</button>
+          <button onclick="baseDelCurrent()"          class="sbtn" id="base-nav-del" style="min-width:32px;font-size:14px;background:rgba(204,51,51,.15);border-color:rgba(204,51,51,.4);color:#f87171" title="BASE löschen">✕</button>
+        </div>
+        <input id="base-name" type="text" placeholder="Name" oninput="baseNameChanged(this.value)" style="width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:3px 6px;font-family:monospace;font-size:.82em;color:var(--txt);margin-bottom:6px;box-sizing:border-box">
+        <div style="font-size:.7em;color:var(--txt3);margin-bottom:4px">Position [mm] / Orientierung [°] vom Roboter-BASE:</div>
+        <div class="stl-grid" style="margin-bottom:5px">
+          <span class="stl-lbl">X</span><input class="stl-inp" id="base-x" type="number" value="0" step="1" oninput="updateBaseDef()"><span class="stl-unit">mm</span>
+          <span class="stl-lbl">Y</span><input class="stl-inp" id="base-y" type="number" value="0" step="0.1" oninput="updateBaseDef()"><span class="stl-unit">mm</span>
+          <span class="stl-lbl">Z</span><input class="stl-inp" id="base-z" type="number" value="0" step="1" oninput="updateBaseDef()"><span class="stl-unit">mm</span>
+          <span class="stl-lbl">A(Z)</span><input class="stl-inp" id="base-a" type="number" value="0" step="1" oninput="updateBaseDef()"><span class="stl-unit">°</span>
+          <span class="stl-lbl">B(Y)</span><input class="stl-inp" id="base-b" type="number" value="0" step="1" oninput="updateBaseDef()"><span class="stl-unit">°</span>
+          <span class="stl-lbl">C(X)</span><input class="stl-inp" id="base-c" type="number" value="0" step="1" oninput="updateBaseDef()"><span class="stl-unit">°</span>
+        </div>
+        
+      </div>
+    </div>
+    <!-- STL Scene -->
+    <div class="sec collapsed">
+      <div class="sec-t" onclick="toggleSec(this)"><span class="tog">▼</span>📦 STL Szenenmodelle
+        <button class="add-btn" onclick="event.stopPropagation();stlAddEntry()" style="background:rgba(37,99,235,.2);border-color:rgba(37,99,235,.5);color:#60a5fa">+</button>
+        <input type="file" id="stl-file" accept=".stl,.stp,.step" multiple>
+      </div>
+      <div class="sec-b">
+        <div id="stl-nav-ui"></div>
+        <div id="stl-fields"></div>
+      </div>
+    </div>
+    <!-- Positions -->
+    <div class="sec collapsed">
+      <div class="sec-t" onclick="toggleSec(this)"><span class="tog">▼</span data-i18n="pos_sec">📍 Positionen</div>
+      <div class="sec-b" id="pos-list"><div class="empty">Keine Positionen gefunden</div></div>
+    </div>
+    <!-- Variables -->
+    <div id="sec-var" class="sec collapsed">
+      <div class="sec-t" onclick="toggleSec(this)"><span class="tog">▼</span data-i18n="var_sec">📦 Variablen</div>
+      <div class="sec-b" id="var-list"><div class="empty">Keine Variablen</div></div>
+    </div>
+    <!-- Digital Out -->
+    <div id="sec-dout" class="sec collapsed">
+      <div class="sec-t" onclick="toggleSec(this)"><span class="tog">▼</span data-i18n="dout_sec">🔴 Digital Outputs ($OUT)</div>
+      <div class="sec-b" id="dout-list"><div class="empty">Kein $OUT</div></div>
+    </div>
+    <!-- Digital In -->
+    <div id="sec-din" class="sec collapsed">
+      <div class="sec-t" onclick="toggleSec(this)"><span class="tog">▼</span data-i18n="din_sec">🔵 Digital Inputs ($IN)</div>
+      <div class="sec-b" id="din-list"><div class="empty">Kein $IN</div></div>
+    </div>
+    <!-- Analog Out -->
+    <div id="sec-anout" class="sec collapsed">
+      <div class="sec-t" onclick="toggleSec(this)"><span class="tog">▼</span>📊 Analog Out ($ANOUT)</div>
+      <div class="sec-b" id="anout-list"><div class="empty">Kein $ANOUT</div></div>
+    </div>
+    <!-- Analog In -->
+    <div id="sec-ain" class="sec collapsed">
+      <div class="sec-t" onclick="toggleSec(this)"><span class="tog">▼</span>📈 Analog In ($ANIN)</div>
+      <div class="sec-b" id="ain-list"><div class="empty">Kein $ANIN</div></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Versteckte Bedienelemente: werden von simulator.js referenziert, in Simple nicht angezeigt -->
+<div id="legacy-stash" style="display:none" aria-hidden="true">
+  <button id="btn-robot3d" class="on"></button>
+  <button id="btn-show-skeleton" class="on"></button>
+  <button id="btn-tcp-trace"></button>
+  <button id="btn-grid"></button>
+  <button id="btn-bg"></button>
+  <button id="btn-persp" class="on"></button>
+  <button id="btn-steuer"></button>
+  <button id="btn-aplot"></button>
+  <input type="range" id="frame-size-sl" min="1" max="600" value="120"><span id="frame-size-v">120</span>
+  <input type="range" id="sphere-size-sl" min="1" max="200" value="18"><span id="sphere-size-v">18</span>
+  <input type="file" id="scene-file-in" accept=".zip,.json,.stp,.step">
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js"></script>
+<script src="./js/i18n.js?v=20261021a"></script>
+<script src="./js/dp-solver.js?v=20261021a"></script>
+<script src="./js/formats/registry.js?v=20261021a"></script>
+<script src="./js/simulator.js?v=20261021a"></script>
+<script src="./js/formats/kuka.js?v=20261021a"></script>
+
+<!-- A-Winkel Diagramm -->
+<div id="aplot-panel" style="position:fixed;bottom:60px;left:320px;width:660px;background:rgba(8,18,28,.97);border:1px solid var(--acc);border-radius:5px;z-index:30;user-select:none;box-shadow:0 4px 20px rgba(0,0,0,.8);display:none">
+  <div id="aplot-hdr" style="display:flex;align-items:center;padding:5px 8px;background:rgba(240,85,0,.12);border-bottom:1px solid rgba(240,85,0,.3);cursor:move;gap:8px">
+    <span style="color:var(--acc);font-weight:bold;font-size:.8em;letter-spacing:1px">A(Rz) — Winkel-Verlauf</span>
+    <span id="aplot-info" style="color:var(--txt2);font-size:.75em;flex:1">—</span>
+    <span id="aplot-edit-hint" style="color:#ffee00;font-size:.72em;display:none">✎ Punkt gezogen</span>
+    <button id="aplot-auto-btn" onclick="aPlotAutoSolve()" title="Automatische A-Winkel-Lösung ohne gelbe Bereiche" style="background:rgba(200,160,0,.15);border:1px solid #c8a000;color:#c8a000;cursor:pointer;font-size:.75em;padding:3px 10px;border-radius:3px">⚡ Auto-Lösung</button>
+    <button onclick="aPlotStartScan()" title="Reachability-Scan starten" style="background:rgba(0,160,80,.15);border:1px solid #00a050;color:#00c060;cursor:pointer;font-size:.75em;padding:3px 10px;border-radius:3px">⟳ MAP erzeugen</button>
+    <button onclick="aPlotApply()" title="Geänderte A-Werte ins KRL übernehmen" style="background:rgba(240,85,0,.2);border:1px solid var(--acc);color:var(--acc);cursor:pointer;font-size:.75em;padding:3px 10px;border-radius:3px;margin-right:4px">✅ Übernehmen</button>
+    <button onclick="aPlotReset()" title="Änderungen zurücksetzen" style="background:none;border:1px solid #3a6080;color:#3a6080;cursor:pointer;font-size:.75em;padding:3px 8px;border-radius:3px;margin-right:4px">↺</button>
+    <button onclick="toggleAPlot()" style="background:none;border:none;color:var(--txt2);cursor:pointer;font-size:1em;padding:0 4px;line-height:1">✕</button>
+  </div>
+  <div style="position:relative;padding:6px 6px 4px">
+    <canvas id="aplot-canvas" width="648" height="210" style="display:block;border-radius:3px"></canvas>
+    <div id="aplot-scan-overlay" style="display:none;position:absolute;inset:6px 6px 4px;background:rgba(5,12,22,.85);border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px">
+      <div style="color:var(--acc);font-size:.8em;letter-spacing:1px" id="aplot-scan-msg">Reachability-Scan läuft…</div>
+      <div style="width:80%;height:4px;background:var(--bg2);border-radius:2px;overflow:hidden">
+        <div id="aplot-scan-bar" style="height:100%;width:0%;background:var(--acc);border-radius:2px;transition:width .1s"></div>
+      </div>
+      <div id="aplot-scan-pct" style="color:var(--txt3);font-size:.75em">0%</div>
+    </div>
+  </div>
+</div>
+
+<!-- Einstellungsfenster -->
+<div id="settings-panel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:360px;background:rgba(10,20,35,.97);border:1px solid var(--acc);border-radius:5px;z-index:25;font-family:'Consolas','Courier New',monospace;box-shadow:0 4px 20px rgba(0,0,0,.7);user-select:none;display:none">
+  <div class="sp-hdr" id="settings-drag-handle">
+    <span class="sp-hdr-title" data-i18n="sett_title">⚙ Einstellungen</span>
+    <span class="sp-close" onclick="toggleSettings()">✕</span>
+  </div>
+  <div class="sp-body" style="overflow-y:auto;max-height:calc(90vh - 40px)">
+    <div class="sp-sec-title" data-i18n="fontsizes">Schriftgrössen</div>
+    <div class="sp-axis-row">
+      <span style="flex:1;color:#c8d8e8;font-size:1em" data-i18n="fz_editor">Editor (Code)</span>
+      <input type="number" min="9" max="50" step="1" id="fz-editor"
+        oninput="applyFZ()"
+        style="width:54px;background:var(--bg3);color:var(--acc);border:1px solid var(--bdr);border-radius:3px;padding:2px 4px;text-align:right;font-size:.95em;font-family:inherit" value="17">
+    </div>
+    <div class="sp-axis-row">
+      <span style="flex:1;color:#c8d8e8;font-size:1em" data-i18n="fz_ui">Toolbar / Buttons</span>
+      <input type="number" min="8" max="50" step="1" id="fz-ui"
+        oninput="applyFZ()"
+        style="width:54px;background:var(--bg3);color:var(--acc);border:1px solid var(--bdr);border-radius:3px;padding:2px 4px;text-align:right;font-size:.95em;font-family:inherit" value="17">
+    </div>
+    <div class="sp-axis-row">
+      <span style="flex:1;color:#c8d8e8;font-size:1em" data-i18n="fz_panel">Parameter rechts</span>
+      <input type="number" min="8" max="50" step="1" id="fz-panel"
+        oninput="applyFZ()"
+        style="width:54px;background:var(--bg3);color:var(--acc);border:1px solid var(--bdr);border-radius:3px;padding:2px 4px;text-align:right;font-size:.95em;font-family:inherit" value="17">
+    </div>
+    <div class="sp-axis-row">
+      <span style="flex:1;color:#c8d8e8;font-size:1em" data-i18n="fz_status">Statusleiste</span>
+      <input type="number" min="8" max="50" step="1" id="fz-status"
+        oninput="applyFZ()"
+        style="width:54px;background:var(--bg3);color:var(--acc);border:1px solid var(--bdr);border-radius:3px;padding:2px 4px;text-align:right;font-size:.95em;font-family:inherit" value="17">
+    </div>
+
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">TCP Trace-Farbe</span><input type="color" id="cfg-trace-col" value="#f05500" style="width:40px;height:28px;border:none;background:none;cursor:pointer;border-radius:3px"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Geplante Bahn</span><input type="color" id="cfg-planned-col" value="#1a3050" style="width:40px;height:28px;border:none;background:none;cursor:pointer;border-radius:3px"></div>
+    <hr class="sp-divider">
+    <div class="sp-sec-title">Sichtbarkeit</div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">TCP Trace</span><input type="checkbox" id="cfg-show-trace" checked style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Skelett</span><input type="checkbox" id="cfg-show-skeleton" checked style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Achsen STL</span><input type="checkbox" id="cfg-show-stlrobot" checked style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Ziel Koordinatensystem</span><input type="checkbox" id="cfg-show-posframes" checked style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">BASE Koordinatensystem</span><input type="checkbox" id="cfg-show-baseframe" checked style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Achslabel</span><input type="checkbox" id="cfg-show-axislabels" checked style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">TCP Frame</span><input type="checkbox" id="cfg-show-tcpmarker" checked style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Werkzeug STL</span><input type="checkbox" id="cfg-show-tool" checked style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Umgebung STL</span><input type="checkbox" id="cfg-show-pedestal" checked style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <hr class="sp-divider">
+    <div class="sp-axis-row">
+      <span style="flex:1;color:#c8d8e8;font-size:1em" data-i18n="lang_label">Sprache:</span>
+      <button id="lang-btn-de" class="sp-jog-btn" onclick="setLang('de')" style="flex:0 0 auto;padding:4px 12px;margin-right:4px">Deutsch</button>
+      <button id="lang-btn-en" class="sp-jog-btn" onclick="setLang('en')" style="flex:0 0 auto;padding:4px 12px">English</button>
+    </div>
+    <hr class="sp-divider">
+    <div class="sp-sec-title">Rechtes Panel — Tabs</div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Kinematik</span><input type="checkbox" id="tab-kin"   checked onchange="applyPanelTabs(true)" style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Robot Einstellungen</span><input type="checkbox" id="tab-robot" checked onchange="applyPanelTabs(true)" style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Variablen</span><input type="checkbox" id="tab-var"   checked onchange="applyPanelTabs(true)" style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Digitale Outputs</span><input type="checkbox" id="tab-dout"  checked onchange="applyPanelTabs(true)" style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Digitale Inputs</span><input type="checkbox" id="tab-din"   checked onchange="applyPanelTabs(true)" style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Analog Out</span><input type="checkbox" id="tab-anout" checked onchange="applyPanelTabs(true)" style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <div class="sp-axis-row"><span style="flex:1;color:#c8d8e8;font-size:1em">Analog In</span><input type="checkbox" id="tab-ain"   checked onchange="applyPanelTabs(true)" style="width:18px;height:18px;accent-color:var(--acc)"></div>
+    <hr class="sp-divider">
+    <div style="display:flex;gap:6px">
+      <button class="sp-jog-btn" onclick="resetSettings()" style="flex:1" data-i18n="fz_reset">↺ Reset</button>
+      <button class="sp-jog-btn" onclick="saveSettings()" style="flex:1;color:var(--acc);border-color:var(--acc)">✓ Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Splash Screen -->
+<div id="splash-screen" style="
+  position:fixed; inset:0; z-index:9999;
+  background:#050d1a;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:24px; font-family:'Consolas','Courier New',monospace;">
+  <div style="color:var(--acc);font-size:2em;font-weight:bold;letter-spacing:3px">RobSimul Simple</div>
+  <div id="ver-splash" style="color:var(--acc);font-size:2.8em;font-weight:bold;letter-spacing:4px;margin-top:-8px"></div>
+  <div style="color:#3a6080;font-size:.85em;letter-spacing:1px">by Datentechnik Reitz</div>
+  <div style="width:200px;height:3px;background:var(--bg2);border-radius:2px;overflow:hidden">
+    <div id="splash-bar" style="height:100%;width:0%;background:var(--acc);border-radius:2px;transition:width .3s ease"></div>
+  </div>
+  <div id="splash-msg" style="color:#3a6080;font-size:.8em">Robsimul wird gestartet. Bitte warten…</div>
+</div>
+<div id="parse-prog" style="position:fixed;top:0;left:0;right:0;z-index:9998;display:none">
+  <div style="height:4px;background:var(--bg2)"><div id="parse-prog-bar" style="height:100%;width:0%;background:var(--acc);transition:width .12s linear"></div></div>
+  <div id="parse-prog-msg" style="position:absolute;top:6px;right:10px;color:var(--acc);font-size:.72em;font-family:monospace;background:var(--bg2);padding:2px 8px;border-radius:3px"></div>
+</div>
+
+<!-- Library Picker Modal -->
+<div id="libPickerModal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.7);align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--acc);border-radius:8px;padding:20px;width:440px;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 id="libPickerTitle" style="margin:0;color:var(--acc);font-family:monospace;font-size:14px">Roboter wählen</h3>
+      <button onclick="closeLibPickerModal()" style="background:none;border:none;color:var(--txt3);font-size:18px;cursor:pointer">✕</button>
+    </div>
+    <input id="libPickerSearch" type="text" placeholder="Suchen…" style="width:100%;background:var(--bg1);border:1px solid var(--bdr);border-radius:3px;padding:5px 8px;font-family:monospace;font-size:12px;color:var(--txt);margin-bottom:8px;box-sizing:border-box">
+    <div id="libPickerList" style="max-height:400px;overflow-y:auto"></div>
+  </div>
+</div>
+
+
+<style>
+.simple-hbtn{display:flex;align-items:center;gap:6px;height:26px;margin:0 10px;padding:0 12px;
+  background:rgba(255,96,0,.12);border:1px solid var(--acc);border-radius:3px;color:var(--acc);
+  font-family:monospace;font-size:12px;cursor:pointer}
+.simple-hbtn:hover{background:rgba(255,96,0,.25)}
+.simple-robot-lbl{font-family:monospace;font-size:12px;color:var(--txt2)}
+.simple-robot-lbl b{color:var(--txt)}
+#rib-aplot.on{border-color:var(--acc);color:var(--acc)}
+</style>
+<script>
+// ── RobSimul Simple: Anpassungen ─────────────────────────────────
+(function(){
+  // Aktiven Roboternamen anzeigen
+  var _origLoadLibItem = window.loadLibItem;
+  window.loadLibItem = async function(type, robot){
+    var lbl = document.getElementById('simple-robot-name');
+    if (lbl) lbl.textContent = 'lädt ' + (robot && robot.name || '') + '…';
+    try {
+      await _origLoadLibItem(type, robot);
+      if (lbl) lbl.textContent = robot && robot.name || '—';
+    } catch(e) {
+      if (lbl) lbl.textContent = 'Fehler beim Laden';
+      throw e;
+    }
+  };
+  // A-Plot-Button-Zustand spiegeln
+  var _origToggleAPlot = window.toggleAPlot;
+  window.toggleAPlot = function(){
+    _origToggleAPlot();
+    var p = document.getElementById('aplot-panel');
+    var b = document.getElementById('rib-aplot');
+    if (b && p) b.classList.toggle('on', p.style.display !== 'none');
+  };
+  var _abtn = document.getElementById('btn-aplot');
+  if (_abtn) _abtn.onclick = window.toggleAPlot;
+})();
+</script>
+
+</body>
+</html>
