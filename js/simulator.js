@@ -1953,6 +1953,7 @@ function applySimT(t){
   const pos=parsedData.positions,N=pos.length;if(!N)return;
   sim.t=Math.max(0,Math.min(N-1,t));
   document.getElementById('pos-s').value=sim.t;
+  {const pe=document.getElementById('pos-pct'); if(pe) pe.textContent=(N>1?Math.round(sim.t/(N-1)*100):0)+' %';}
   const idx=Math.min(Math.floor(sim.t),N-1);
   if(typeof setActiveTool==='function')setActiveTool(pos[idx]&&pos[idx].toolN); // aktives TCP/Tool dieses Satzes
   // Show trajectory sample count
@@ -2207,6 +2208,10 @@ function renderGutter(){
   let html='<div style="transform:translateY('+(first*lh-st)+'px)">';
   for(let i=first;i<last;i++) html+='<div class="gl'+(i===_gutActive?' active':'')+'">'+(i+1)+'</div>';
   _gutEl.innerHTML=html+'</div>';
+  // Balken über der aktiven Zeile im Textfeld (8 px = Innenabstand oben)
+  const hl=document.getElementById('code-hl');
+  if(hl){ if(_gutActive<0){hl.style.top='-100px';} else { const y=8+_gutActive*lh-st; hl.style.top=y+'px'; hl.style.height=lh+'px';
+    hl.style.display=(y<-lh||y>_codeEl.clientHeight)?'none':''; } }
 }
 function buildGutter(count){ _gutLines=count; _gutKey=''; renderGutter(); }
 function rebuildGutter(){
@@ -2215,6 +2220,22 @@ function rebuildGutter(){
   buildGutter(n);
 }
 _codeEl.addEventListener('scroll',renderGutter);
+// Cursorzeile im Editor → Roboter an diese Programmposition (Klick, Pfeiltasten, Bild auf/ab …)
+let _edLine=-1;
+function _editorCursorToSim(){
+  if(!parsedData||!parsedData.posOfLine||_ikPending)return;
+  const v=_codeEl.value, c=_codeEl.selectionStart;
+  let line=0; for(let k=v.indexOf('\n');k>=0&&k<c;k=v.indexOf('\n',k+1)) line++;
+  if(line===_edLine)return; _edLine=line;
+  const L=parsedData.posOfLine; const idx=L[Math.min(line,L.length-1)];
+  if(idx<0)return;
+  if(sim.playing){pauseSim();setStatus('paused','PAUSED');}
+  applySimT(idx);
+  const si=parsedData.stepOfPos?parsedData.stepOfPos[idx]:-1; if(si>=0)applyStep(si);
+  _gutActive=line; _gutKey=''; renderGutter();
+}
+_codeEl.addEventListener('click',_editorCursorToSim);
+_codeEl.addEventListener('keyup',e=>{ if(/^(Arrow|Page|Home|End|Enter|Backspace|Delete)/.test(e.key)) _editorCursorToSim(); });
 function updateGutterActive(lineNum){
   if(lineNum===_gutActive)return;
   _gutActive=lineNum;
@@ -2237,7 +2258,13 @@ function parseAndLoad(){
   _gutActive=-1;
   ensureBasesForProgram(); // Eintraege fuer alle referenzierten BASE_DATA[n] sicherstellen
   bakeBaseOffset(); // Code-Koordinaten + jeweils aktiver BASE-Offset pro Punkt -> Welt
-  buildGutter(code.split(/\r?\n/).length);
+  const _nLines=code.split(/\r?\n/).length;
+  buildGutter(_nLines);
+  // Programmzeile → Positionsindex (Zeilen ohne Bewegung: letzte Bewegung davor)
+  parsedData.posOfLine=new Int32Array(_nLines).fill(-1);
+  parsedData.positions.forEach((p,i)=>{if(p.lineNum!==undefined&&p.lineNum<_nLines&&parsedData.posOfLine[p.lineNum]<0)parsedData.posOfLine[p.lineNum]=i;});
+  for(let l=1;l<_nLines;l++) if(parsedData.posOfLine[l]<0) parsedData.posOfLine[l]=parsedData.posOfLine[l-1];
+  for(let l=0;l<_nLines&&parsedData.posOfLine[l]<0;l++) if(N) parsedData.posOfLine[l]=0; // Programmkopf → Anfang
   const ps=document.getElementById('pos-s');ps.min=0;ps.max=Math.max(0,N-1);ps.step=0.001;ps.value=0;
   document.getElementById('pos-v').textContent=N>0?`1 / ${N}`:'— / —';
   stopSim(0);setStatus('stopped','STOPPED');document.getElementById('marker-info').style.display='none';

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261021p">
+<link rel="stylesheet" href="./css/simulator.css?v=20261021q">
 </head>
 <body>
 
@@ -92,6 +92,7 @@
     <div class="sec-title">Programm <small>KUKA KRL</small></div>
     <div class="ew">
       <div id="gutter"></div>
+      <div id="code-hl"></div>
       <textarea id="code-input" spellcheck="false" wrap="off"></textarea>
     </div>
     <button class="btn primary" id="parse-btn" title="Programm parsen und IK berechnen [F9]">▶&nbsp; PARSE &amp; LOAD</button>
@@ -123,7 +124,7 @@
         <div><b id="spd-v">40%</b><span>Tempo</span></div>
       </div>
       <div class="slider-row" style="margin-bottom:10px"><span class="lbl-l">Tempo</span><input type="range" id="spd-s" min="1" max="100" value="40"></div>
-      <div class="slider-row" style="margin-bottom:12px"><span class="lbl-l">Position</span><input type="range" id="pos-s" min="0" max="1" value="0" step="0.001"></div>
+      <div class="slider-row" style="margin-bottom:12px"><span class="lbl-l">Position</span><input type="range" id="pos-s" min="0" max="1" value="0" step="0.001" title="Simulation 0–100 % – zieht Roboter und Editorzeile mit"><span id="pos-pct" class="pct">0 %</span></div>
       <div class="transport">
         <button class="btn icon" id="b-start" title="Zum Anfang [Home]"><svg class="ico"><use href="#i-first"/></svg></button>
         <button class="btn icon" id="b-playrev" title="Rückwärts abspielen"><svg class="ico"><use href="#i-rev"/></svg></button>
@@ -232,7 +233,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261021p"></script>
-<script src="./js/simulator.js?v=20261021p"></script>
+<script src="./js/dp-solver.js?v=20261021q"></script>
+<script src="./js/simulator.js?v=20261021q"></script>
 </body>
 </html>
