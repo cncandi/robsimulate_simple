@@ -1874,7 +1874,25 @@ function updateMarkerPose(ipos){markerGrp.position.set(ipos.X,ipos.Y,ipos.Z);mar
 // Visited path
 let visitedLine=null;
 let visitedHead=null, _visitedVtx=null, _visitedKeep=null;
+// G-Code-Darstellung: 'all' = ganze Bahn, 'upto' = bis zur aktuellen Simulationsposition, 'none' = ausgeblendet
+let plannedLine=null, pathMode='all';
+function setPathMode(mode){
+  pathMode=mode;
+  document.querySelectorAll('[data-path]').forEach(b=>b.classList.toggle('on',b.dataset.path===mode));
+  updateVisitedPath(sim.t); requestRender();
+}
+function _applyPathMode(t){
+  const show=pathMode!=='none';
+  pathGrp.visible=show; posGrp.visible=show;
+  if(!show)return;
+  const N=parsedData.positions.length;
+  const cnt=pathMode==='upto' ? (t>0||sim.t>0 ? Math.min(N,Math.floor(t)+1) : 1) : N;
+  if(plannedLine) plannedLine.geometry.setDrawRange(0,cnt);
+  // Zielpunkte: Punktwolke per DrawRange, Koordinatenkreuze einzeln
+  posGrp.children.forEach((c,i)=>{ if(c.isPoints) c.geometry.setDrawRange(0,cnt); else c.visible=i<cnt; });
+}
 function updateVisitedPath(t){
+  _applyPathMode(t);
   if(!visitedLine)return;
   const cutIdx=(trajectory.length&&t>0)?Math.floor(simTToTrajT(t)*trajMax):0;
   if(cutIdx<1){visitedLine.geometry.setDrawRange(0,0);visitedHead.visible=false;return;}
@@ -2078,12 +2096,13 @@ function _disposeGroup(grp){
 
 function buildScene(positions){ requestRender();
   _disposeGroup(posGrp);_disposeGroup(pathGrp);
-  visitedLine=visitedHead=null;markerGrp.visible=false;
+  visitedLine=visitedHead=plannedLine=null;markerGrp.visible=false;
   if(!positions.length)return;
   const N=positions.length, arr=new Float32Array(N*3);
   positions.forEach((p,i)=>{arr[i*3]=p.X;arr[i*3+1]=p.Y;arr[i*3+2]=p.Z;});
   if(N>1){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(arr,3));
-    pathGrp.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:PLANNED_COL,linewidth:pathLineWidth})));}
+    plannedLine=new THREE.Line(g,new THREE.LineBasicMaterial({color:PLANNED_COL,linewidth:pathLineWidth}));
+    plannedLine.frustumCulled=false;pathGrp.add(plannedLine);}
   if(N<=FRAME_LIMIT){
     positions.forEach((pos,i)=>{const g=makeFrame(pos);g.userData.posIdx=i;posGrp.add(g);});
   }else{
@@ -2097,6 +2116,7 @@ function buildScene(positions){ requestRender();
   const box=new THREE.Box3();box.setFromArray(arr);
   const ctr=new THREE.Vector3();box.getCenter(ctr);const span=box.getSize(new THREE.Vector3()).length();
   orbitTarget.copy(ctr);orbitState.radius=Math.max(800,span*1.9);updateCamera();
+  _applyPathMode(sim.t);
 }
 
 // ═══════════════════════════════════════════════════
