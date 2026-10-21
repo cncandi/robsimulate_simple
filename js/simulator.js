@@ -2244,13 +2244,17 @@ function _editorCursorToSim(){
   const L=parsedData.posOfLine; const idx=L[Math.min(line,L.length-1)];
   if(idx<0)return;
   if(sim.playing){pauseSim();setStatus('paused','PAUSED');}
-  applySimT(idx);
-  const si=parsedData.stepOfPos?parsedData.stepOfPos[idx]:-1; if(si>=0)applyStep(si);
+  _edDriving=true;
+  try{ applySimT(idx); const si=parsedData.stepOfPos?parsedData.stepOfPos[idx]:-1; if(si>=0)applyStep(si); }
+  finally{ _edDriving=false; }
   _gutActive=line; _gutKey=''; renderGutter();
 }
 _codeEl.addEventListener('click',_editorCursorToSim);
 _codeEl.addEventListener('keyup',e=>{ if(/^(Arrow|Page|Home|End|Enter|Backspace|Delete)/.test(e.key)) _editorCursorToSim(); });
+_codeEl.addEventListener('keydown',e=>{ if(e.repeat&&/^(ArrowUp|ArrowDown|Page)/.test(e.key)) setTimeout(_editorCursorToSim,0); });
+let _edDriving=false; // Positionswechsel kommt aus dem Editor: Editor nicht scrollen, Cursorzeile bleibt markiert
 function updateGutterActive(lineNum){
+  if(_edDriving)return;
   if(lineNum===_gutActive)return;
   _gutActive=lineNum;
   const lh=_lineHeight(), top=lineNum*lh;
