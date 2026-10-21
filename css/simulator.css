@@ -137,19 +137,40 @@ input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;bac
 .statusbar .sb-right{margin-left:auto;display:flex;align-items:center;gap:6px}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
 
-/* A-Plot */
-#aplot-panel{position:fixed;bottom:40px;left:420px;width:660px;background:var(--bg-panel);border:1px solid var(--bdr-strong);
-  border-radius:4px;z-index:30;user-select:none;box-shadow:0 6px 24px rgba(0,0,0,.55);display:none}
-#aplot-hdr{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--bdr);cursor:move}
-#aplot-hdr .sec-title{font-size:12.5px}
-#aplot-info{flex:1;font-family:var(--mono);font-size:11px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#aplot-msg{font-family:var(--mono);font-size:11px;color:var(--teal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42%}
-#aplot-edit-hint{font-size:11px;color:#ffee00;display:none}
+/* Robot Map */
+#aplot-panel{position:fixed;bottom:40px;left:420px;width:660px;height:var(--aplot-h,58vh);background:var(--bg-panel);
+  border:1px solid var(--bdr-strong);border-radius:4px;z-index:30;user-select:none;box-shadow:0 6px 24px rgba(0,0,0,.55);
+  display:none;flex-direction:column}
+#aplot-panel.max{bottom:auto}
+#aplot-grip{height:5px;cursor:ns-resize;flex:none;border-radius:4px 4px 0 0}
+#aplot-grip:hover{background:var(--blue-bg)}
+#aplot-hdr{display:flex;align-items:center;gap:8px;padding:2px 10px 6px;border-bottom:1px solid var(--bdr);flex:none}
+#aplot-hdr .sec-title{font-size:12.5px;white-space:nowrap}
+#aplot-info{flex:1;min-width:120px;font-family:var(--mono);font-size:11px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#aplot-msg{font-family:var(--mono);font-size:11px;color:var(--teal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30%}
+#aplot-edit-hint{font-size:11px;color:#d8f03c;display:none;white-space:nowrap}
 #aplot-hdr .btn{flex:none;height:28px;font-size:12px}
 #aplot-hdr .btn.icon{width:30px}
-.aplot-body{position:relative;padding:6px}
-#aplot-canvas{display:block;border-radius:3px}
-#aplot-scan-overlay{display:none;position:absolute;inset:6px;background:rgba(27,27,29,.9);border-radius:3px;
+.aplot-main{flex:1;display:flex;min-height:0}
+.aplot-side{width:178px;flex:none;border-right:1px solid var(--bdr);padding:8px 10px;display:flex;flex-direction:column;gap:5px;
+  overflow:auto;font-size:12px;color:var(--txt2)}
+.aplot-side .side-h{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);margin-top:6px}
+.aplot-side label{display:flex;align-items:center;gap:7px;cursor:pointer}
+.aplot-side label input{margin:0;accent-color:var(--teal-strong)}
+.aplot-side label i{width:12px;height:12px;border-radius:2px;flex:none}
+.aplot-side label i.dash{height:0;border-top:2px dashed #c8ccd6;border-radius:0}
+.side-row{display:flex;align-items:center;gap:6px}
+.side-row>span:first-child{width:62px;flex:none}
+.side-row .inp{height:24px;padding:0 4px;font-size:11.5px;min-width:0;flex:1}
+.side-row .u{color:var(--txt3)}
+#aplot-verify{font-family:var(--mono);font-size:11px;line-height:1.4;color:var(--txt3)}
+#aplot-verify.ok{color:#3ddc84}
+#aplot-verify.bad{color:#ff6b81}
+#aplot-verify.run{color:var(--blue)}
+.side-help{margin-top:auto;font-size:10.5px;line-height:1.45;color:var(--txt3)}
+.aplot-body{position:relative;flex:1;min-width:0;min-height:0}
+#aplot-canvas{display:block;position:absolute;inset:0;cursor:crosshair}
+#aplot-scan-overlay{display:none;position:absolute;inset:0;background:rgba(27,27,29,.9);
   flex-direction:column;align-items:center;justify-content:center;gap:10px}
 .progress{width:80%;height:4px;background:var(--bg-card);border-radius:2px;overflow:hidden}
 .progress>div{height:100%;width:0%;background:var(--blue);transition:width .1s}

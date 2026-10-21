@@ -7,9 +7,12 @@ Live: https://cnc-technik.de/robsimul/simple/
 - Robotermodell aus der RobLib-Bibliothek wählen (Kinematik, Achs-STLs, Podest, Werkzeug, TCP/BASE-Daten)
 - KUKA-KRL-Programm bearbeiten, als .src öffnen/speichern, parsen (F9)
 - Simulation: Play vor/zurück, Einzelschritt, Anfang/Ende, Geschwindigkeit, Echtzeit, Positionsregler
-- A-Plot: A-Winkel-Verlauf, Reachability-Map, Singularitätsmarker, Auto-Lösung, A-Werte per Ziehen ändern und ins KRL übernehmen
-- A-Plot-Raster (Auto/1/10/100/1000): MAP und Auto-Lösung rechnen nur auf jedem n-ten Punkt; die Auto-Lösung ändert trotzdem alle Punkte
-  (A-Änderung entlang der Bahn interpoliert) und prüft jeden Punkt per IK. Nicht erreichbare Punkte werden rot markiert.
+- Robot Map (A): Karte der A-Werte entlang der Bahn (links Beginn, rechts Ende) mit Feldern für unerreichbar,
+  Achsgrenze und Singularität. Achsstellungen laufen stetig entlang der Bahn, Achsgrenzen (z. B. A6 ±180°) erscheinen dort,
+  wo die Achse zurückdrehen müsste. Grüne Linie wird automatisch um die Störfelder gelegt (Sicherheitsabstand einstellbar),
+  Knoten verschiebbar / einfügbar / löschbar. Verifikation prüft jeden Programmpunkt mit dem A der Linie.
+  "Übernehmen" schreibt A für alle Punkte ins KRL.
+- Ellbogen-Singularität: Streckwinkel aus den Achsmaßen berechnet (KR8 ca. 18°), nicht pauschal A3 = ±90°.
 - 3D-Ansicht: Standardansichten Vorne/Hinten/Links/Rechts/Oben/Unten/Isometrisch, Perspektive/Orthogonal,
   Zoom +/−, Einpassen; Maus: Drehen (links), Verschieben (rechts/Mitte), Zoom (Rad)
 - Oberfläche im Stil von P3D-SO (Farben, Toolbar mit Icon über Label, Panels, Statusleiste)

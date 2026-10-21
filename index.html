@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261021j">
+<link rel="stylesheet" href="./css/simulator.css?v=20261021k">
 </head>
 <body>
 
@@ -172,26 +172,45 @@
 
 <!-- A-Winkel-Verlauf -->
 <div id="aplot-panel">
+  <div id="aplot-grip" title="Höhe ändern"></div>
   <div id="aplot-hdr">
-    <span class="sec-title">A(Rz)-Verlauf</span>
+    <span class="sec-title">Robot Map · A</span>
     <span id="aplot-info">—</span>
     <span id="aplot-msg"></span>
-    <span id="aplot-edit-hint">Punkt geändert</span>
-    <select id="aplot-step" class="inp" style="width:104px;flex:none;height:28px;padding:0 4px;font-size:11px" title="Raster für MAP und Auto-Lösung: nur jeder n-te Punkt wird gescannt. Die Auto-Lösung ändert trotzdem alle Punkte.">
-      <option value="auto">Raster Auto</option><option value="1">Raster 1</option><option value="10">Raster 10</option><option value="100">Raster 100</option><option value="1000">Raster 1000</option>
-    </select>
-    <button class="btn" onclick="aPlotStartScan()" title="Reachability-Scan starten">MAP erzeugen</button>
-    <button class="btn" onclick="aPlotAutoSolve()" title="Automatische A-Winkel-Lösung ohne gelbe Bereiche">Auto-Lösung</button>
-    <button class="btn primary" onclick="aPlotApply()" title="Geänderte A-Werte ins KRL übernehmen">Übernehmen</button>
-    <button class="btn icon" onclick="aPlotReset()" title="Änderungen zurücksetzen">↺</button>
+    <span id="aplot-edit-hint">Linie nicht übernommen</span>
+    <button class="btn" onclick="aPlotStartScan()" title="Karte der erreichbaren A-Werte entlang der Bahn berechnen">MAP erzeugen</button>
+    <button class="btn" onclick="aPlotAutoPath()" title="Grüne Linie automatisch um Störbereiche legen">Auto-Weg</button>
+    <button class="btn" onclick="aPlotPathFromProgram()" title="Grüne Linie aus den A-Werten des Programms anlegen">Aus Programm</button>
+    <button class="btn primary" onclick="aPlotApply()" title="A-Werte der grünen Linie für alle Punkte ins KRL schreiben">Übernehmen</button>
+    <button class="btn icon" onclick="aPlotReset()" title="Linie neu automatisch anlegen">↺</button>
+    <button class="btn icon" onclick="aPlotToggleMax()" title="Maximieren / Normal">⤢</button>
     <button class="xbtn" onclick="toggleAPlot()" title="Schließen">✕</button>
   </div>
-  <div class="aplot-body">
-    <canvas id="aplot-canvas" width="648" height="210"></canvas>
-    <div id="aplot-scan-overlay">
-      <div class="lbl" id="aplot-scan-msg">Reachability-Scan läuft…</div>
-      <div class="progress"><div id="aplot-scan-bar"></div></div>
-      <div class="lbl" id="aplot-scan-pct">0%</div>
+  <div class="aplot-main">
+    <div class="aplot-side">
+      <div class="side-h">Karte</div>
+      <label><input type="checkbox" checked onchange="aPlotLayer('reach',this.checked)"><i style="background:rgb(110,18,32)"></i>Unerreichbar</label>
+      <label><input type="checkbox" checked onchange="aPlotLayer('limit',this.checked)"><i style="background:rgb(222,40,82)"></i>Achsgrenze</label>
+      <label><input type="checkbox" checked onchange="aPlotLayer('sing',this.checked)"><i style="background:rgb(235,196,50)"></i>Singularität</label>
+      <label><input type="checkbox" checked onchange="aPlotLayer('prog',this.checked)"><i class="dash"></i>Programm-A</label>
+      <label><input type="checkbox" checked onchange="aPlotLayer('path',this.checked)"><i style="background:#3ddc84"></i>Weg (grün)</label>
+      <div class="side-h">Einstellungen</div>
+      <div class="side-row"><span>Auflösung</span><select id="aplot-res" class="inp">
+        <option value="auto">Auto</option><option value="500">500</option><option value="1000">1000</option><option value="2000">2000</option><option value="all">Alle Punkte</option></select></div>
+      <div class="side-row"><span>A-Schritt</span><select id="aplot-astep" class="inp">
+        <option value="6">6°</option><option value="3" selected>3°</option><option value="2">2°</option></select></div>
+      <div class="side-row"><span>Abstand</span><input id="aplot-safe" class="inp" type="number" value="12" min="0" max="90" step="3"><span class="u">°</span></div>
+      <div class="side-h">Verifikation</div>
+      <div id="aplot-verify">—</div>
+      <div class="side-help">Knoten ziehen · auf Linie ziehen fügt Knoten ein · Rechtsklick löscht Knoten · Klick setzt Simulation</div>
+    </div>
+    <div class="aplot-body">
+      <canvas id="aplot-canvas"></canvas>
+      <div id="aplot-scan-overlay">
+        <div class="lbl" id="aplot-scan-msg">MAP wird erzeugt…</div>
+        <div class="progress"><div id="aplot-scan-bar"></div></div>
+        <div class="lbl" id="aplot-scan-pct">0%</div>
+      </div>
     </div>
   </div>
 </div>
@@ -212,7 +231,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261021j"></script>
-<script src="./js/simulator.js?v=20261021j"></script>
+<script src="./js/dp-solver.js?v=20261021k"></script>
+<script src="./js/simulator.js?v=20261021k"></script>
 </body>
 </html>

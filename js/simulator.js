@@ -297,7 +297,8 @@ function ikAnalyticAll(tx, ty, tz, ta, tb, tc) {
 }
 
 // Nächstgelegene gültige Lösung zu prevQ (inkl. ±360°-Varianten); null wenn nicht analytisch lösbar
-function solveIKAnalytic(tx, ty, tz, ta, tb, tc, prevQ) {
+// strict: keine Ausweichkopie ±360° in die Achsgrenzen (Achse müsste dafür zurückdrehen) → ok=false
+function solveIKAnalytic(tx, ty, tz, ta, tb, tc, prevQ, strict) {
   if (!ikAnalyticSupported()) return null;
   prevQ = prevQ || jointAngles;
   let best = null, bestCost = Infinity;
@@ -307,7 +308,8 @@ function solveIKAnalytic(tx, ty, tz, ta, tb, tc, prevQ) {
     for (let i = 0; i < 6; i++) {
       const lo = JOINTS_DEF[i].min, hi = JOINTS_DEF[i].max;
       let v = sol[i] + 360*Math.round((prevQ[i] - sol[i]) / 360);   // nächstgelegene 360°-Kopie
-      if (v < lo || v > hi) {                                        // sonst nächste Kopie in den Grenzen
+      if ((v < lo || v > hi) && strict) inLim = false;
+      else if (v < lo || v > hi) {                                   // sonst nächste Kopie in den Grenzen
         let alt = null;
         for (let k = -2; k <= 2; k++) { const w = sol[i] + 360*k; if (w >= lo && w <= hi && (alt === null || Math.abs(w - prevQ[i]) < Math.abs(alt - prevQ[i]))) alt = w; }
         if (alt === null) inLim = false; else v = alt;
@@ -1165,12 +1167,20 @@ function classifySingTypes(angles_deg) {
   var wx = pts[4][0], wy = pts[4][1];
   if (Math.sqrt(wx*wx + wy*wy) < 60) types.push('shoulder');
 
-  // ── 3. Ellbogen (Streckstellung): cos(A3) ≈ 0 ────────────────
-  // Analytisch: d(Armreichweite)/d(A3) = 630·200·cos(A3)/dist
-  // Nullstelle bei A3 = ±90°  →  arm an max. oder min. Extension
-  // FK_SIGNS[2] = 1, also effektiver Winkel = A3_deg
-  var a3rad = angles_deg[2] * Math.PI / 180;
-  if (Math.abs(Math.cos(a3rad)) < 0.17) types.push('elbow'); // ±80°..±100°
+  // ── 3. Ellbogen (Streckstellung) ──────────────────────────────
+  // Gestreckt ist der Arm, wenn beide Ellbogen-Lösungen der IK zusammenfallen: A3 = Streckwinkel.
+  // Der Streckwinkel folgt aus den Achsmaßen (Unterarm-Versatz) und ist je Roboter verschieden
+  // (KR8: ca. 18°, nicht 90°). Singulär innerhalb ±10° um den Streckwinkel.
+  if (ikAnalyticSupported()) {
+    var J = JOINTS_DEF, o2 = J[1].off, o3 = J[2].off, ux = o3[0] + J[3].off[0], uz = o3[2];
+    var th3s = Math.atan2(o2[0]*uz - o2[2]*ux, o2[0]*ux + o2[2]*uz);
+    var dd = angles_deg[2] * FK_SIGNS[2] * Math.PI / 180 - th3s;
+    dd = Math.atan2(Math.sin(dd), Math.cos(dd));
+    if (Math.abs(dd) < 10 * Math.PI / 180) types.push('elbow');
+  } else {
+    var a3rad = angles_deg[2] * Math.PI / 180;
+    if (Math.abs(Math.cos(a3rad)) < 0.17) types.push('elbow');
+  }
 
   return types;
 }
@@ -2184,10 +2194,7 @@ function parseAndLoad(){
   },10);
 }
 document.getElementById('parse-btn').addEventListener('click',function(){
-  // Scan-Daten invalidieren — MAP erzeugen muss danach neu geklickt werden
-  _aPlotReach = null; _aPlotReachMid = null; _aPlotReachSing = null; _aPlotScan = null; _aPlotBad = null;
   parseAndLoad();
-  aPlotMsg('MAP erzeugen klicken für Reachability-Scan');
 });
 
 // ═══════════════════════════════════════════════════
@@ -2246,692 +2253,578 @@ END`;
   makeResizer('ep-resize-handle', function(){ return document.querySelector('.ep'); }, function(){ return 1; });
 })();
 // ══════════════════════════════════════════════════════
-// A-WINKEL DIAGRAMM
+// ROBOT MAP – Redundanzachse A (Drehung um Werkzeug-Z)
+// x = Bahnlänge (links Beginn, rechts Ende), y = A-Wert -360…360°
+// Felder: unerreichbar, Achsgrenze, Singularität. Grüne Linie = gewählter A-Verlauf,
+// automatisch angelegt, Knoten verschiebbar. Die Linie legt A für ALLE Programmpunkte fest.
 // ══════════════════════════════════════════════════════
-var _aPlotDists = [];
-var _aPlotBad = null;   // Uint8Array: 1 = Zwischenpunkt mit neuem A nicht erreichbar (nur Raster > 1)
-var _aPlotEdits = {};   // {idx: newA} — geänderte A-Werte
-var _aPlotDragging = false;
-var _aPlotReach       = null;  // [{ok:[bool,…]}] pro Wegpunkt
-var _aPlotReachMid    = null;  // [{ok:[bool,…]}] pro Mittelpunkt
-var _aPlotReachSing   = null;  // Uint8Array pro Wegpunkt × A-Step: Bitmaske der Singularitätstypen (SING_BIT)
 const SING_BIT = { wrist:1, shoulder:2, elbow:4 };
-var _aPlotReachScanId = 0;
-var _aPlotDragIdx  = -1;
-var _aPlotML = 56, _aPlotMT = 14;
-var _aPlotAMIN = -360, _aPlotAMAX = 360;
+const CELL_LIMIT = 8, CELL_REACH = 16, CELL_SING = 7;
+const AMAP_MIN = -360, AMAP_MAX = 360;
+const AMAP_COL = {
+  reach: [110, 18, 32],   // dunkelrot: keine IK-Lösung
+  limit: [222, 40, 82],   // rot: nur außerhalb der Achsgrenzen lösbar
+  sing:  [235, 196, 50],  // gelb: singulär
+};
+const AMAP_KIND_TXT = { 1:'unerreichbar', 2:'Achsgrenze', 3:'Singularität', 4:'Achssprung' };
+const AMAP_KIND_COL = { 1:'#ff4d6a', 2:'#ff4d6a', 3:'#ebc432', 4:'#ff9b3d' };
 
-// aPlot-Panel auf Breite des Editor-Panels (.ep) ausrichten
-function _aPlotFitWidth() {
-  var vp    = document.querySelector('.vp');
-  var panel = document.getElementById('aplot-panel');
-  if (!vp || !panel) return;
-  var r = vp.getBoundingClientRect();
-  panel.style.left  = r.left + 'px';
-  panel.style.width = r.width + 'px';
-  var canvas = document.getElementById('aplot-canvas');
-  if (canvas) canvas.width = Math.max(300, Math.round(r.width) - 14);
-}
+var _aPlotDists = [];
+var _aPlotEdits = {};
+var _aMap = null;          // { sig, L, astep, nA, samples:[{d, code:Uint8Array}] }
+var _aPath = null;         // grüne Linie: [{d, a}] nach d sortiert, erster d=0, letzter d=L
+var _aVerify = null;       // { bad:Int32Array, kind:Uint8Array }
+var _aLayers = { reach:true, limit:true, sing:true, prog:true, path:true };
+var _aScanId = 0, _aVerifyId = 0;
+var _aPlotVersion = 0, _aPlotCache = null, _aPlotCacheVer = -1, _aMapImg = null, _aMapImgKey = '';
+var _aG = { ML:54, MT:10, MR:12, MB:46, W:0, H:0, CW:0, CH:0, dpr:1 };
+var _aDrag = null;         // { idx } Knoten, der gezogen wird
+var _aHover = null;        // { x, y }
 
-function toggleAPlot() {
-  var p = document.getElementById('aplot-panel');
-  if (!p) return;
-  var show = getComputedStyle(p).display === 'none';
-  p.style.display = show ? 'block' : 'none';
-  document.getElementById('rib-aplot').classList.toggle('on', show);
-  if (show) {
-    _aPlotFitWidth();
-    // Sofort _aPlotPos setzen damit erster Drag funktioniert
-    window._aPlotPos = (parsedData && parsedData.positions) ? parsedData.positions : [];
-    _aPlotCalcDists(window._aPlotPos);
-    aPlotInvalidate();
-  }
-}
+function _aPos() { return (parsedData && parsedData.positions) ? parsedData.positions : []; }
+function _aTotal() { return _aPlotDists.length ? (_aPlotDists[_aPlotDists.length-1] || 1) : 1; }
+function aPlotMsg(txt) { var el = document.getElementById('aplot-msg'); if (el) el.textContent = txt; }
 
 function _aPlotCalcDists(pos) {
-  _aPlotDists = [0];
+  _aPlotDists = new Array(pos.length);
+  if (!pos.length) return;
+  _aPlotDists[0] = 0;
   for (let i = 1; i < pos.length; i++) {
     var dx = pos[i].X - pos[i-1].X, dy = pos[i].Y - pos[i-1].Y, dz = pos[i].Z - pos[i-1].Z;
-    _aPlotDists.push(_aPlotDists[i-1] + Math.sqrt(dx*dx + dy*dy + dz*dz));
+    _aPlotDists[i] = _aPlotDists[i-1] + Math.sqrt(dx*dx + dy*dy + dz*dz);
   }
 }
 
-// ── aPlot Zeichenhilfen ──────────────────────────────────────────────────────
+// Kennung der Bahngeometrie: Karte bleibt gültig, solange sich X/Y/Z/B/C, Werkzeug und Roboter nicht ändern.
+// Nur geänderte A-Werte (z. B. nach "Übernehmen") verwerfen die Karte nicht.
+function _aSig(pos) {
+  var h = pos.length | 0;
+  function mix(v) { h = (Math.imul(h, 31) + Math.round(v * 100)) | 0; }
+  for (let i = 0; i < pos.length; i++) { var p = pos[i]; mix(p.X); mix(p.Y); mix(p.Z); mix(p.B); mix(p.C); }
+  mix(TCP_DEF.x); mix(TCP_DEF.y); mix(TCP_DEF.z); mix(TCP_DEF.a); mix(TCP_DEF.b); mix(TCP_DEF.c);
+  JOINTS_DEF.forEach(function(j) { mix(j.min); mix(j.max); });
+  return h;
+}
+function _aCheckMap() {
+  if (!_aMap) return;
+  if (_aMap.sig !== _aSig(_aPos())) {
+    _aMap = null; _aPath = null; _aVerify = null; _aMapImg = null;
+    aPlotMsg('Bahn geändert — MAP neu erzeugen');
+  }
+}
 
-function _aPlotDrawBackground(ctx, ML, MT, CW, CH, W, H) {
-  const AMIN = -360, ARNG = 720;
-  ctx.fillStyle = '#242426'; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#1b1b1d'; ctx.fillRect(ML, MT, CW, CH);
-  ctx.font = '10px monospace';
-  [-360,-270,-180,-90,0,90,180,270,360].forEach(function(deg) {
-    var yp = MT + (1 - (deg - AMIN) / ARNG) * CH;
-    var isZero = deg === 0, is180 = Math.abs(deg) === 180;
-    ctx.strokeStyle = isZero ? '#60687b' : '#37373a';
-    ctx.lineWidth = (isZero || is180) ? 1 : 0.5;
-    ctx.beginPath(); ctx.moveTo(ML, yp); ctx.lineTo(ML + CW, yp); ctx.stroke();
-    ctx.fillStyle = isZero ? '#e2e2e4' : is180 ? '#c7c7ca' : '#9a9a9f';
-    ctx.textAlign = 'right';
-    ctx.fillText(deg + '°', ML - 4, yp + 3.5);
+// Index des Bahnsegments, in dem die Bogenlänge d liegt
+function _aSegAt(d) {
+  var lo = 0, hi = _aPlotDists.length - 1;
+  while (hi - lo > 1) { var m = (lo + hi) >> 1; if (_aPlotDists[m] <= d) lo = m; else hi = m; }
+  return lo;
+}
+function _aNearestIdx(d) {
+  var i = _aSegAt(d), N = _aPlotDists.length;
+  if (i + 1 < N && Math.abs(_aPlotDists[i+1] - d) < Math.abs(d - _aPlotDists[i])) i++;
+  return i;
+}
+// Pose auf der Bahn bei Bogenlänge d (linear zwischen den Programmpunkten)
+function _aPoseAt(d, pos) {
+  var i = _aSegAt(d), N = pos.length;
+  if (i >= N - 1) return pos[N-1];
+  var L0 = _aPlotDists[i], L1 = _aPlotDists[i+1], f = L1 > L0 ? (d - L0) / (L1 - L0) : 0;
+  var p0 = pos[i], p1 = pos[i+1];
+  function ang(a, b) { return a + shortestAngleDiff(a, b) * f; }
+  return { X:p0.X+(p1.X-p0.X)*f, Y:p0.Y+(p1.Y-p0.Y)*f, Z:p0.Z+(p1.Z-p0.Z)*f, B:ang(p0.B,p1.B), C:ang(p0.C,p1.C) };
+}
+// A-Wert der grünen Linie bei Bogenlänge d
+function _aPathA(d) {
+  var P = _aPath; if (!P || !P.length) return 0;
+  if (d <= P[0].d) return P[0].a;
+  for (let k = 1; k < P.length; k++) {
+    if (d <= P[k].d) { var f = P[k].d > P[k-1].d ? (d - P[k-1].d) / (P[k].d - P[k-1].d) : 1; return P[k-1].a + (P[k].a - P[k-1].a) * f; }
+  }
+  return P[P.length-1].a;
+}
+
+// IK-Klassifikation einer Pose bei vorgegebenem A: {code, angles}
+// Achswerte der Simulation sind stetig fortgeführt (können außerhalb ±360° liegen):
+// auf die 360°-Kopie innerhalb der Achsgrenzen zurückführen
+function _aNormQ(q) {
+  return q.map(function(v, j) {
+    var w = v - 360 * Math.round(v / 360), lo = JOINTS_DEF[j].min, hi = JOINTS_DEF[j].max;
+    if (w < lo && w + 360 <= hi) w += 360; else if (w > hi && w - 360 >= lo) w -= 360;
+    return w;
   });
-  ctx.save();
-  ctx.translate(10, MT + CH / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle = '#9a9a9f'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('A (Rz) [°]', 0, 0);
-  ctx.restore();
+}
+function _aStartQ(i) { return _aNormQ((ikTable && ikTable[i] && ikTable[i].angles) ? ikTable[i].angles : jointAngles); }
+
+// strict: Achsen laufen stetig von initQ weiter (keine ±360°-Ausweichkopie)
+function _aClassify(p, a, initQ, strict) {
+  var analytic = ikAnalyticSupported();
+  var an = analytic ? solveIKAnalytic(p.X, p.Y, p.Z, a, p.B, p.C, initQ, strict) : null;
+  if (an && !an.ok) return { code: CELL_LIMIT, angles: null };
+  if (analytic && !an) return { code: CELL_REACH, angles: null };   // geometrisch keine Lösung
+  var res = (an && an.ok) ? an : solveIKPrecise(p.X, p.Y, p.Z, a, p.B, p.C, initQ);
+  if (!res || !res.ok) return { code: CELL_REACH, angles: null };
+  var m = classifySingTypes(res.angles).reduce(function(acc, k) { return acc | SING_BIT[k]; }, 0);
+  return { code: m, angles: res.angles };
 }
 
-function _aPlotDrawVerticalGrid(ctx, ML, MT, CW, CH, pos, total) {
-  var xSteps = Math.max(1, Math.min(8, pos.length - 1));
-  for (let xs = 0; xs <= xSteps; xs++) {
-    var xf  = xs / xSteps;
-    var xpx = ML + xf * CW;
-    ctx.strokeStyle = '#37373a'; ctx.lineWidth = 0.5;
-    ctx.beginPath(); ctx.moveTo(xpx, MT); ctx.lineTo(xpx, MT + CH); ctx.stroke();
-    ctx.fillStyle = '#9a9a9f'; ctx.textAlign = 'center'; ctx.font = '10px monospace';
-    ctx.fillText((xf * total / 1000).toFixed(2) + 'm', xpx, MT + CH + 18);
+// ── Layout / Panel ───────────────────────────────────────
+function _aPlotFitWidth() {
+  var vp = document.querySelector('.vp'), panel = document.getElementById('aplot-panel');
+  if (!vp || !panel) return;
+  var r = vp.getBoundingClientRect();
+  panel.style.left = r.left + 'px';
+  panel.style.width = r.width + 'px';
+  if (panel.classList.contains('max')) { panel.style.top = r.top + 'px'; panel.style.height = r.height + 'px'; }
+  else { panel.style.top = ''; panel.style.height = ''; }
+  _aLayoutCanvas();
+}
+function _aLayoutCanvas() {
+  var canvas = document.getElementById('aplot-canvas'), body = document.querySelector('#aplot-panel .aplot-body');
+  if (!canvas || !body) return;
+  var w = Math.max(300, body.clientWidth), h = Math.max(160, body.clientHeight);
+  var dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
   }
-  ctx.strokeStyle = '#505055'; ctx.lineWidth = 1;
-  ctx.strokeRect(ML, MT, CW, CH);
+  _aG.W = w; _aG.H = h; _aG.dpr = dpr;
+  _aG.CW = w - _aG.ML - _aG.MR; _aG.CH = h - _aG.MT - _aG.MB;
+}
+function toggleAPlot() {
+  var p = document.getElementById('aplot-panel'); if (!p) return;
+  var show = getComputedStyle(p).display === 'none';
+  p.style.display = show ? 'flex' : 'none';
+  document.getElementById('rib-aplot').classList.toggle('on', show);
+  if (show) { _aPlotFitWidth(); aPlotInvalidate(); }
+}
+function aPlotToggleMax() {
+  var p = document.getElementById('aplot-panel');
+  p.classList.toggle('max');
+  _aPlotFitWidth(); aPlotInvalidate();
+}
+function aPlotLayer(key, on) { _aLayers[key] = on; aPlotInvalidate(); }
+
+// ── Zeichnen ─────────────────────────────────────────────
+function _ax(d) { return _aG.ML + d / _aTotal() * _aG.CW; }
+function _ay(a) { return _aG.MT + (AMAP_MAX - a) / (AMAP_MAX - AMAP_MIN) * _aG.CH; }
+function _aXtoD(x) { return Math.max(0, Math.min(_aTotal(), (x - _aG.ML) / _aG.CW * _aTotal())); }
+function _aYtoA(y) { return Math.max(AMAP_MIN, Math.min(AMAP_MAX, AMAP_MAX - (y - _aG.MT) / _aG.CH * (AMAP_MAX - AMAP_MIN))); }
+
+// Karte als Bild: eine Spalte je Bildschirmpixel, Zeilen = A-Schritte. Mehrere Scanpunkte in einer
+// Spalte werden zusammengefasst (schlechtester Zustand gewinnt), leere Spalten nehmen den nächsten Scanpunkt.
+function _aColumnCodes(nCol) {
+  var M = _aMap, S = M.samples, L = M.L, nA = M.nA;
+  var out = new Uint8Array(nCol * nA), j = 0;
+  for (let c = 0; c < nCol; c++) {
+    var d0 = c / nCol * L, d1 = (c + 1) / nCol * L, any = false;
+    while (j < S.length && S[j].d < d0) j++;
+    for (let k = j; k < S.length && S[k].d < d1; k++) {
+      any = true; var code = S[k].code;
+      for (let s = 0; s < nA; s++) out[c*nA + s] |= code[s];
+    }
+    if (!any) {
+      var dm = (d0 + d1) / 2, best = Math.min(j, S.length - 1);
+      if (best > 0 && Math.abs(S[best-1].d - dm) < Math.abs(S[best].d - dm)) best--;
+      out.set(S[best].code, c * nA);
+    }
+  }
+  return out;
+}
+function _aMapImage(nCol) {
+  var key = nCol + '|' + _aLayers.reach + _aLayers.limit + _aLayers.sing;
+  if (_aMapImg && _aMapImgKey === key) return _aMapImg;
+  var nA = _aMap.nA, codes = _aColumnCodes(nCol);
+  var cv = document.createElement('canvas'); cv.width = nCol; cv.height = nA;
+  var cx = cv.getContext('2d'), img = cx.createImageData(nCol, nA), D = img.data;
+  for (let c = 0; c < nCol; c++) for (let s = 0; s < nA; s++) {
+    var code = codes[c*nA + s], col = null;
+    if ((code & CELL_REACH) && _aLayers.reach) col = AMAP_COL.reach;
+    else if ((code & CELL_LIMIT) && _aLayers.limit) col = AMAP_COL.limit;
+    else if ((code & CELL_SING) && _aLayers.sing) col = AMAP_COL.sing;
+    if (!col) continue;
+    var o = ((nA - 1 - s) * nCol + c) * 4;
+    D[o] = col[0]; D[o+1] = col[1]; D[o+2] = col[2]; D[o+3] = 200;
+  }
+  cx.putImageData(img, 0, 0);
+  _aMapImg = cv; _aMapImgKey = key;
+  return cv;
 }
 
-function _aPlotDrawReachBands(ctx, ML, MT, CW, CH, pos, total) {
-  if (!_aPlotReach || !_aPlotReach.length) return;
-  const AMIN = -360, ARNG = 720, ASTEP = 6, NSTEPS = Math.round(720 / ASTEP);
-  var reachN = Math.min(_aPlotReach.length, pos.length);
-  var xAt = function(i) { return ML + (_aPlotDists[i] / total) * CW; };
-  for (let ri = 0; ri < reachN; ri++) {
-    var reach = _aPlotReach[ri]; if (!reach) continue;
-    // Folgepunkte mit identischem Ergebnis (Raster-Zwischenpunkte) zu einem Band zusammenfassen
-    var re = ri;
-    while (re + 1 < reachN && _aPlotReach[re+1] === reach) re++;
-    var xL = ri === 0 ? ML : (xAt(ri-1) + xAt(ri)) / 2;
-    var xR = re === pos.length-1 ? ML+CW : (xAt(re) + xAt(re+1)) / 2;
-    ri = re;
-    ctx.save();
-    ctx.beginPath(); ctx.rect(xL, MT, xR - xL, CH); ctx.clip();
-    for (let si = 0; si < NSTEPS; si++) {
-      if (reach[si]) continue;
-      var yTop = MT + (1 - (-360 + (si+1)*ASTEP - AMIN) / ARNG) * CH;
-      var yBot = MT + (1 - (-360 + si*ASTEP   - AMIN) / ARNG) * CH;
-      ctx.fillStyle = 'rgba(200,160,0,0.18)';
-      ctx.fillRect(xL, yTop, xR - xL, yBot - yTop);
-    }
-    ctx.restore();
+function _aDrawStatic(c, pos) {
+  var G = _aG, L = _aTotal();
+  c.fillStyle = '#242426'; c.fillRect(0, 0, G.W, G.H);
+  c.fillStyle = '#18181a'; c.fillRect(G.ML, G.MT, G.CW, G.CH);
+  if (_aMap) {
+    var img = _aMapImage(Math.max(1, Math.round(G.CW)));
+    c.imageSmoothingEnabled = false;
+    // Zeile s liegt bei A = MIN + s·astep: Bildzeilen um eine halbe Zeile versetzt zentrieren
+    var rowH = G.CH / (AMAP_MAX - AMAP_MIN) * _aMap.astep;
+    c.drawImage(img, G.ML, G.MT - rowH / 2, G.CW, G.CH + rowH);
+    c.fillStyle = '#242426'; c.fillRect(G.ML, G.MT - rowH, G.CW, rowH); c.fillRect(G.ML, G.MT + G.CH, G.CW, rowH);
   }
-  ctx.fillStyle = 'rgba(200,160,0,0.5)'; ctx.fillRect(ML+4, MT+4, 10, 8);
-  ctx.fillStyle = '#aaa080'; ctx.font = '9px monospace'; ctx.textAlign = 'left';
-  ctx.fillText('keine IK-Lösung', ML+17, MT+11);
-}
-
-function _aPlotDrawCurves(ctx, ML, MT, CW, CH, pos, total) {
-  const AMIN = -360, ARNG = 720;
-  var xp = function(i) { return ML + (_aPlotDists[i] / total) * CW; };
-  var yp = function(a) { return MT + (1 - (a - AMIN) / ARNG) * CH; };
-  // Originallinie (orange)
-  ctx.beginPath(); ctx.strokeStyle = '#32c6da'; ctx.lineWidth = 2;
-  pos.forEach(function(p, i) { i===0 ? ctx.moveTo(xp(i),yp(p.A)) : ctx.lineTo(xp(i),yp(p.A)); });
-  ctx.stroke();
-  // Wegpunkte
-  pos.forEach(function(p, i) {
-    var a = (_aPlotEdits[i] !== undefined) ? _aPlotEdits[i] : p.A;
-    ctx.fillStyle = (_aPlotBad && _aPlotBad[i]) ? '#f87171' : (_aPlotEdits[i] !== undefined) ? '#ffee00' : '#7bd8e4';
-    ctx.beginPath(); ctx.arc(xp(i), yp(a), (_aPlotBad && _aPlotBad[i]) ? 5 : 4, 0, 2*Math.PI); ctx.fill();
-  });
-  // Editierte Linie (gelb gestrichelt)
-  if (Object.keys(_aPlotEdits).length > 0) {
-    ctx.beginPath(); ctx.strokeStyle = '#ffee00'; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
-    pos.forEach(function(p, i) {
-      var a = (_aPlotEdits[i] !== undefined) ? _aPlotEdits[i] : p.A;
-      i===0 ? ctx.moveTo(xp(i),yp(a)) : ctx.lineTo(xp(i),yp(a));
-    });
-    ctx.stroke(); ctx.setLineDash([]);
+  // Gitter A
+  c.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono'); c.textAlign = 'right';
+  for (let deg = -360; deg <= 360; deg += 45) {
+    var y = _ay(deg), major = deg % 90 === 0;
+    c.strokeStyle = deg === 0 ? 'rgba(200,200,210,.35)' : major ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.035)';
+    c.lineWidth = 1;
+    c.beginPath(); c.moveTo(G.ML, y); c.lineTo(G.ML + G.CW, y); c.stroke();
+    if (major) { c.fillStyle = deg === 0 ? '#e2e2e4' : '#9a9a9f'; c.fillText(deg + '°', G.ML - 5, y + 3.5); }
   }
-}
-
-function _aPlotDrawSingMarkers(ctx, ML, MT, CW, CH, pos, total) {
-  if (typeof classifySingTypes !== 'function' || !pos.length) return;
-  const AMIN = -360, ARNG = 720;
-  const SING_LCOL = { wrist:'#ffb400', shoulder:'#dc3232', elbow:'#32b4dc' };
-  const SING_LBL  = { wrist:'Handgelenk', shoulder:'Schulter', elbow:'Ellbogen' };
-  ctx.save();
-  var legendTypes = {};
-
-  // Reachability-Scan: singuläre erreichbare A-Werte
-  if (_aPlotReach && _aPlotReach.length === pos.length &&
-      _aPlotReachSing) {
-    var ASTEP = 6, NSTEPS = Math.round(720 / ASTEP);
-    for (let ri = 0; ri < pos.length; ri++) {
-      var xMid = ML + (_aPlotDists[ri] / total) * CW;
-      var xL = ri===0 ? ML : (ML+(_aPlotDists[ri-1]/total)*CW + xMid)/2;
-      var xR = ri===pos.length-1 ? ML+CW : (xMid + ML+(_aPlotDists[ri+1]/total)*CW)/2;
-      for (let si = 0; si < NSTEPS; si++) {
-        if (!_aPlotReach[ri][si]) continue;
-        var mask = _aPlotReachSing[ri][si];
-        if (!mask) continue;
-        var stypes = ['wrist','shoulder','elbow'].filter(function(k){ return mask & SING_BIT[k]; });
-        var yp = MT + (1 - (-360 + si*ASTEP - AMIN) / ARNG) * CH;
-        stypes.forEach(function(t) {
-          legendTypes[t] = true;
-          ctx.fillStyle = SING_LCOL[t]; ctx.globalAlpha = 0.7;
-          ctx.beginPath(); ctx.arc((xL+xR)/2, yp, 2.5, 0, 2*Math.PI); ctx.fill();
-        });
-      }
-    }
-    ctx.globalAlpha = 1;
+  // Gitter Bahnlänge
+  var stepM = [0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100,200,500].find(function(s) { return L/1000/s <= 10; }) || 1000;
+  c.textAlign = 'center';
+  for (let m = 0; m <= L/1000 + 1e-9; m += stepM) {
+    var x = _ax(m * 1000);
+    c.strokeStyle = 'rgba(255,255,255,.06)'; c.beginPath(); c.moveTo(x, G.MT); c.lineTo(x, G.MT + G.CH); c.stroke();
+    c.fillStyle = '#9a9a9f'; c.fillText((stepM < 1 ? m.toFixed(2) : Math.round(m)) + ' m', x, G.MT + G.CH + 34);
   }
-
-  // Aktueller Pfad (ikTable): Raute-Symbole
-  if (typeof ikTable !== 'undefined' && ikTable.length > 0) {
-    var singN = Math.min(ikTable.length, pos.length);
-    for (let i = 0; i < singN; i++) {
-      var ik = ikTable[i]; if (!ik || !ik.angles) continue;
-      var stypes = classifySingTypes(ik.angles);
-      if (!stypes.length) continue;
-      var xpS = ML + (_aPlotDists[i] / total) * CW;
-      var ypS = MT + (1 - (pos[i].A - AMIN) / ARNG) * CH;
-      stypes.forEach(function(t) {
-        legendTypes[t] = true;
-        var r = 6;
-        ctx.fillStyle = SING_LCOL[t]; ctx.strokeStyle = '#000'; ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(xpS, ypS-r); ctx.lineTo(xpS+r, ypS);
-        ctx.lineTo(xpS, ypS+r); ctx.lineTo(xpS-r, ypS);
-        ctx.closePath(); ctx.fill(); ctx.stroke();
-      });
-    }
-  }
-
-  // Legende
-  ctx.font = '9px monospace';
-  var lx = ML+CW-4, ly = MT+CH-4;
-  ['elbow','shoulder','wrist'].filter(function(t){ return legendTypes[t]; })
-    .forEach(function(t, i) {
-      var yy = ly - i*13;
-      ctx.fillStyle = SING_LCOL[t]; ctx.globalAlpha = 0.85;
-      ctx.beginPath();
-      ctx.moveTo(lx-78,yy-6); ctx.lineTo(lx-74,yy-2);
-      ctx.lineTo(lx-78,yy+2); ctx.lineTo(lx-82,yy-2);
-      ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
-      ctx.fillStyle = SING_LCOL[t]; ctx.textAlign = 'left';
-      ctx.fillText(SING_LBL[t], lx-70, yy);
-    });
-  ctx.restore();
-}
-
-function _aPlotDrawCursor(ctx, ML, MT, CW, CH, pos, total) {
-  if (typeof sim === 'undefined' || pos.length < 2) return;
-  const AMIN = -360, ARNG = 720;
-  var N  = pos.length;
-  var i0 = Math.max(0, Math.min(N-1, Math.floor(sim.t)));
-  var i1 = Math.min(i0+1, N-1);
-  var fr = sim.t - i0;
-  var cd = _aPlotDists[i0] + (_aPlotDists[i1] - _aPlotDists[i0]) * fr;
-  var ca = pos[i0].A + (pos[i1].A - pos[i0].A) * fr;
-  var cx = ML + (cd / total) * CW;
-  var cy = MT + (1 - (ca - AMIN) / ARNG) * CH;
-  ctx.strokeStyle = 'rgba(85,174,244,0.6)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
-  ctx.beginPath(); ctx.moveTo(cx, MT); ctx.lineTo(cx, MT+CH); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = '#55aef4';
-  ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 2*Math.PI); ctx.fill();
-  var info = document.getElementById('aplot-info');
-  if (info) info.textContent = 'A = ' + ca.toFixed(2) + '°  ·  Pos ' + (i0+1) + '/' + N + '  ·  ' + (cd/1000).toFixed(3) + ' m';
-}
-
-// ── aPlotDraw: Koordinator ───────────────────────────────────────────────────
-function aPlotDraw() {
-  var canvas = document.getElementById('aplot-canvas');
-  var panel  = document.getElementById('aplot-panel');
-  if (!canvas || !panel || getComputedStyle(panel).display === 'none') return;
-
-  var W = canvas.width, H = canvas.height;
-  var ML=56, MT=14, MR=10, MB=30;
-  var CW = W-ML-MR, CH = H-MT-MB;
-  var ctx = canvas.getContext('2d');
-  var pos = (parsedData && parsedData.positions) ? parsedData.positions : [];
-
-  // Statische Ebenen (Raster, Map, Kurve, Singularitäten) nur bei Änderung neu zeichnen
-  if (!_aPlotCache || _aPlotCache.width !== W || _aPlotCache.height !== H || _aPlotCacheVer !== _aPlotVersion) {
-    if (!_aPlotCache) _aPlotCache = document.createElement('canvas');
-    _aPlotCache.width = W; _aPlotCache.height = H; _aPlotCacheVer = _aPlotVersion;
-    var c2 = _aPlotCache.getContext('2d');
-    c2.clearRect(0, 0, W, H);
-    _aPlotDrawBackground(c2, ML, MT, CW, CH, W, H);
-    if (!pos.length) {
-      c2.fillStyle = '#9a9a9f'; c2.font = '13px monospace'; c2.textAlign = 'center';
-      c2.fillText('Kein Programm geladen', W/2, H/2);
-    } else {
-      _aPlotCalcDists(pos);
-      var tot = _aPlotDists[_aPlotDists.length-1] || 1;
-      _aPlotDrawVerticalGrid(c2, ML, MT, CW, CH, pos, tot);
-      _aPlotDrawReachBands(c2, ML, MT, CW, CH, pos, tot);
-      _aPlotDrawCurves(c2, ML, MT, CW, CH, pos, tot);
-      _aPlotDrawSingMarkers(c2, ML, MT, CW, CH, pos, tot);
-    }
-  }
-  ctx.clearRect(0, 0, W, H);
-  ctx.drawImage(_aPlotCache, 0, 0);
-  if (!pos.length) return;
-  var total = _aPlotDists[_aPlotDists.length-1] || 1;
-  _aPlotML=ML; _aPlotMT=MT; window._aPlotCW=CW; window._aPlotCH=CH;
-  window._aPlotTotal=total; window._aPlotPos=pos;
-  _aPlotDrawCursor(ctx, ML, MT, CW, CH, pos, total);
-}
-
-// Statusmeldung im A-Plot-Kopf (getrennt von der Cursor-Anzeige)
-function aPlotMsg(txt) { document.getElementById('aplot-msg').textContent = txt; }
-
-// Zwischenspeicher des A-Plots verwerfen und neu zeichnen
-var _aPlotCache = null, _aPlotCacheVer = -1, _aPlotVersion = 0;
-function aPlotInvalidate() { _aPlotVersion++; aPlotDraw(); }
-
-// Map Canvas Drag: A-Wert eines Punktes ändern
-(function() {
-  function getCanvas() { return document.getElementById('aplot-canvas'); }
-  function nearestPoint(mx) {
-    var pos = window._aPlotPos; if (!pos || !pos.length) return -1;
-    var CW = window._aPlotCW||600, total = window._aPlotTotal||1;
-    var best = -1, bestD = 20;
-    pos.forEach(function(p,i) {
-      var xp = _aPlotML + (_aPlotDists[i] / total) * CW;
-      var d = Math.abs(mx - xp);
-      if (d < bestD) { bestD = d; best = i; }
-    });
-    return best;
-  }
-  function yToA(my) {
-    var CH = window._aPlotCH||180;
-    var a = _aPlotAMIN + (1 - (my - _aPlotMT) / CH) * (_aPlotAMAX - _aPlotAMIN);
-    return Math.max(_aPlotAMIN, Math.min(_aPlotAMAX, a));
-  }
-  document.addEventListener('DOMContentLoaded', function() {
-    var c = getCanvas(); if (!c) return;
-    c.style.cursor = 'ns-resize';
-    c.addEventListener('mousedown', function(e) {
-      var r = c.getBoundingClientRect();
-      var mx = e.clientX - r.left;
-      // Sicherstellen dass _aPlotPos und Distanzen aktuell sind
-      window._aPlotPos = (parsedData && parsedData.positions) ? parsedData.positions : [];
-      if (_aPlotDists.length !== window._aPlotPos.length) _aPlotCalcDists(window._aPlotPos);
-      var idx = nearestPoint(mx);
-      if (idx < 0) return;
-      _aPlotDragging = true; _aPlotDragIdx = idx;
-      e.preventDefault();
-    });
-    document.addEventListener('mousemove', function(e) {
-      if (!_aPlotDragging || _aPlotDragIdx < 0) return;
-      var c2 = getCanvas(); if (!c2) return;
-      var r = c2.getBoundingClientRect();
-      var my = e.clientY - r.top;
-      var newA = Math.round(yToA(my) * 10) / 10;
-      _aPlotEdits[_aPlotDragIdx] = newA;
-      var hint = document.getElementById('aplot-edit-hint');
-      if (hint) hint.style.display = '';
-      aPlotInvalidate();
-      aPlotLivePreview(_aPlotDragIdx, newA);
-      // Status aktualisieren
-      var info = document.getElementById('aplot-info');
-      if (info) info.textContent = 'P' + (_aPlotDragIdx+1) + '  A = ' + newA.toFixed(1) + '°  ✎ ziehen';
-    });
-    document.addEventListener('mouseup', function() {
-      _aPlotDragging = false; _aPlotDragIdx = -1;
-    });
-  });
-})();
-
-function aPlotLivePreview(idx, newA) {
-  var pos = (parsedData && parsedData.positions) ? parsedData.positions : [];
-  window._aPlotPos = pos;
-  if (!pos[idx]) return;
-  var p = pos[idx];
-  // Warm-Start per segIdx
-  var warmQ = jointAngles.slice();
-  if (trajectory && trajectory.length) {
-    for (let ti = trajectory.length-1; ti >= 0; ti--) {
-      if (trajectory[ti].segIdx === idx) { warmQ = trajectory[ti].angles; break; }
-    }
-  }
-  // Hochpräzisions-IK: nur A ändert sich, XYZ BC exakt aus Programm
-  var res = ikPreciseA(p.X, p.Y, p.Z, newA, p.B, p.C, warmQ);
-  if (res && res.ok) applyAngles(res.angles);
-}
-
-// Reachability-Scan: Wegpunkte + Mittelpunkte, 6°-Schritte
-// Rasterergebnis auf alle Punkte übertragen (für Anzeige). Zwischenpunkte vorsichtig:
-// erreichbar nur, wenn beide Rasterpunkte und das Zwischenstück erreichbar sind; singulär, wenn einer singulär ist.
-// Alle Zwischenpunkte eines Abschnitts teilen sich ein Array (wenig Speicher).
-var _aPlotScan = null;
-function _aPlotExpandScan() {
-  var S = _aPlotScan, N = parsedData.positions.length;
-  _aPlotReach = new Array(N); _aPlotReachMid = new Array(Math.max(0, N-1)); _aPlotReachSing = new Array(N);
-  for (let j = 0; j < S.idxs.length; j++) {
-    var a = S.idxs[j];
-    _aPlotReach[a] = S.reach[j]; _aPlotReachSing[a] = S.sing[j];
-    if (j === S.idxs.length - 1) break;
-    var b = S.idxs[j+1];
-    if (b - a === 1) { _aPlotReachMid[a] = S.mid[j]; continue; }
-    var ra = S.reach[j], rb = S.reach[j+1], rm = S.mid[j], sa = S.sing[j], sb = S.sing[j+1];
-    var r = new Uint8Array(ra.length), s = new Uint8Array(ra.length);
-    for (let q = 0; q < ra.length; q++) { r[q] = ra[q] & rb[q] & rm[q]; s[q] = sa[q] | sb[q]; }
-    for (let i = a; i < b; i++) { _aPlotReachMid[i] = r; if (i > a) { _aPlotReach[i] = r; _aPlotReachSing[i] = s; } }
-  }
-}
-
-function aPlotStartScan() {
-  aPlotMsg('');
-  _aPlotScan = null; _aPlotBad = null;
-  // Scan-Daten zurücksetzen und neu starten
-  _aPlotReach = null; _aPlotReachMid = null;
-  _aPlotReachSing = null;
-  aPlotScanReachability();
-}
-
-function aPlotScanReachability() {
-  var pos = (parsedData && parsedData.positions) ? parsedData.positions : [];
-  if (!pos.length) { _aPlotReach = null; _aPlotReachMid = null; return; }
-  _aPlotReach = null; _aPlotReachMid = null; _aPlotReachSing = null;
-  var ASTEP = 6, NSTEPS = Math.round(720 / ASTEP);
-  var scanId = ++_aPlotReachScanId;
-  var wpResult  = [], midResult = [], wpSing = [];
-
-  // Fortschrittsanzeige einblenden
-  var overlay = document.getElementById('aplot-scan-overlay');
-  var bar     = document.getElementById('aplot-scan-bar');
-  var pctEl   = document.getElementById('aplot-scan-pct');
-  var msgEl   = document.getElementById('aplot-scan-msg');
-  if (overlay) overlay.style.display = 'flex';
-
-  // Raster: nur jeder k-te Punkt wird gescannt (Auto: höchstens ~2000 Rasterpunkte)
-  var N = pos.length, sel = document.getElementById('aplot-step').value;
-  var k = sel === 'auto' ? Math.max(1, Math.ceil(N / 2000)) : Math.max(1, parseInt(sel, 10) || 1);
-  var idxs = [];
-  for (let i = 0; i < N; i += k) idxs.push(i);
-  if (idxs[idxs.length-1] !== N-1) idxs.push(N-1);
-
-  // Scan-Positionen: Rasterpunkt, Zwischenstück, Rasterpunkt, …
-  // Zwischenstück: bei direkt benachbarten Punkten der Mittelpunkt der Strecke,
-  // sonst der mittlere echte Bahnpunkt (liegt auch bei gekrümmter Bahn auf der Bahn)
-  var scanList = [];
-  for (let j = 0; j < idxs.length; j++) {
-    var a = idxs[j];
-    scanList.push({ type:'wp', idx:a, p: pos[a] });
-    if (j < idxs.length - 1) {
-      var b = idxs[j+1], m = Math.floor((a + b) / 2), p0 = pos[a], p1 = pos[b];
-      scanList.push({ type:'mid', idx:a, subIdx:0, p: (b - a === 1) ? {
-        X:(p0.X+p1.X)/2, Y:(p0.Y+p1.Y)/2, Z:(p0.Z+p1.Z)/2,
-        B:(p0.B+p1.B)/2, C:(p0.C+p1.C)/2
-      } : pos[m] });
-    }
-  }
-  var totalSteps = scanList.length;
-
-  var si = 0;
-  function scanNext() {
-    if (scanId !== _aPlotReachScanId) {
-      if (overlay) overlay.style.display = 'none';
-      return;
-    }
-    if (si >= scanList.length) {
-      _aPlotScan = { idxs: idxs, k: k, reach: wpResult, mid: midResult, sing: wpSing };
-      _aPlotExpandScan();
-      if (overlay) overlay.style.display = 'none';
-      aPlotMsg(k > 1 ? 'Raster: jeder ' + k + '. Punkt (' + idxs.length + ' von ' + N + ' gescannt)' : '');
-      aPlotInvalidate();
-      return;
-    }
-    // Fortschritt aktualisieren
-    var pct = Math.round(si / totalSteps * 100);
-    if (bar)   bar.style.width   = pct + '%';
-    if (pctEl) pctEl.textContent = pct + '%';
-    if (msgEl) msgEl.textContent = 'Scan ' + (si+1) + ' / ' + totalSteps + ' Positionen…';
-
-    // Mehrere Positionen pro Durchlauf (~15 ms), dann dem Browser Zeit für Anzeige/Eingaben lassen
-    var tEnd = performance.now() + 15;
-    do {
-    var item = scanList[si];
-    var p = item.p;
-    var initQ  = jointAngles.slice();
-    var reach  = new Uint8Array(NSTEPS);
-    var sing   = (item.type === 'wp') ? new Uint8Array(NSTEPS) : null;
-    for (let s = 0; s < NSTEPS; s++) {
-      var aTest = -360 + s * ASTEP;
-      var res = ikPreciseA(p.X, p.Y, p.Z, aTest, p.B, p.C, initQ);
-      reach[s] = (res && res.ok) ? 1 : 0;
-      if (reach[s]) {
-        initQ = res.angles;
-        if (sing) sing[s] = classifySingTypes(res.angles).reduce(function(m, k){ return m | SING_BIT[k]; }, 0);
-      }
-    }
-    if (item.type === 'wp') { wpResult.push(reach); wpSing.push(sing); }
-    else                      midResult.push(reach);
-    si++;
-    } while (si < scanList.length && performance.now() < tEnd);
-    setTimeout(scanNext, 0);
-  }
-  setTimeout(scanNext, 0);
-}
-
-// ── Auto-Lösung: erweitertes DP mit optionalen Mittelpunkt-Hilfspunkten ──
-// Knotenfolge: wp0, mid01, wp1, mid12, …, wp[N-1]
-// Mittelpunkte sind OPTIONAL: Bypass kostet 0 wenn direkte Interpolation erreichbar,
-// sonst wird ein Hilfspunkt mit C_DIS eingefügt.
-function aPlotAutoSolve() {
-  var infoEl = document.getElementById('aplot-msg');
-  if (!_aPlotReach || !_aPlotReachMid) {
-    if (infoEl) infoEl.textContent = 'Scan läuft noch — bitte warten…'; return;
-  }
-  var pos = (parsedData && parsedData.positions) ? parsedData.positions : [];
-  if (!pos.length) { if (infoEl) infoEl.textContent = 'Kein Programm geladen.'; return; }
-  if (_aPlotReach.length !== pos.length || !_aPlotScan) {
-    if (infoEl) infoEl.textContent = 'Scan veraltet — bitte neu parsen.'; return;
-  }
-  var SC = _aPlotScan;
-
-  var ASTEP = 6, NSTEPS = Math.round(720 / ASTEP), INF = 1e9;
-  var N = pos.length;
-
-  // ── Knotenfolge aufbauen ──────────────────────────────
-  // nodes[k] = { type:'wp'|'mid', idx, subIdx, reach[NSTEPS] }
-  // NSUB Zwischenpunkte pro Segment (t=1/(NSUB+1) … NSUB/(NSUB+1))
-  // Knoten = Rasterpunkte und Zwischenstücke (bei Raster 1: alle Punkte)
-  var nodes = [];
-  for (let j = 0; j < SC.idxs.length; j++) {
-    nodes.push({ type:'wp', idx:SC.idxs[j], reach:SC.reach[j], sing:SC.sing[j] });
-    if (j < SC.idxs.length-1)
-      nodes.push({ type:'mid', idx:SC.idxs[j], subIdx:0, reach:SC.mid[j] });
-  }
-  var M = nodes.length; // 2N-1
-
-  // ── DP: dp[k][s] = {cost, prev_k, prev_s} ────────────
-  // Für Mittelpunkte: Zustand NSTEPS = "Bypass" (kein Hilfspunkt)
-  var BYPASS = NSTEPS; // extra Zustand
-  var dp = [];
-  for (let k = 0; k < M; k++) {
-    var states = (nodes[k].type === 'mid') ? NSTEPS + 1 : NSTEPS;
-    dp.push(new Array(states));
-    for (let s = 0; s < states; s++) dp[k][s] = { cost: INF, pk: -1, ps: -1 };
-  }
-
-  // Hilfsfunktionen für DP-Filterung
-  var BUFFER_PENALTY = 120;
-  var BUFFER_WIDTH   = 3;  // 18° Abstand zu gelben Bereichen
-
-  // Ist ein WP-Schritt singulär? → komplett sperren
-  function isSingStep(node, stepIdx) {
-    return !!(node.sing && node.sing[stepIdx] > 0);
-  }
-
-  // Pufferkosten: Abstand zu nicht-erreichbaren Nachbarn
-  function bufferCost(reach, stepIdx) {
-    if (!reach) return 0;
-    for (let b = 1; b <= BUFFER_WIDTH; b++) {
-      var lo = stepIdx-b, hi = stepIdx+b;
-      if ((lo>=0 && !reach[lo]) || (hi<reach.length && !reach[hi]))
-        return BUFFER_PENALTY / b;
-    }
-    return 0;
-  }
-
-  // Startpunkt wp[0]
-  var startA = pos[0].A;
-  for (let s = 0; s < NSTEPS; s++) {
-    if (!nodes[0].reach[s]) continue;
-    if (isSingStep(nodes[0], s)) continue;
-    dp[0][s].cost = Math.abs((-360 + s*ASTEP) - startA) + bufferCost(nodes[0].reach, s);
-  }
-
-  // DP vorwärts
-  for (let k = 1; k < M; k++) {
-    var nd  = nodes[k];
-    var pkv = k - 1;
-
-    if (nd.type === 'wp') {
-      // Von Mittelpunkt (k-1) zu Wegpunkt (k)
-      var midNd = nodes[pkv];
-      for (let s = 0; s < NSTEPS; s++) {          // Ziel wp
-        if (!nd.reach[s]) continue;
-        if (isSingStep(nd, s)) continue;           // singuläre Schritte sperren
-        var aTo = -360 + s*ASTEP;
-        var sCost = bufferCost(nd.reach, s);
-        // Aus realen Mittelpunkt-Zuständen
-        for (let ps = 0; ps < NSTEPS; ps++) {
-          if (dp[pkv][ps].cost >= INF) continue;
-          if (!midNd.reach[ps]) continue;
-          var cost = dp[pkv][ps].cost + Math.abs(aTo - (-360+ps*ASTEP)) + sCost;
-          if (cost < dp[k][s].cost) { dp[k][s] = {cost, pk:pkv, ps}; }
-        }
-        // Aus Bypass-Zustand
-        if (dp[pkv][BYPASS].cost < INF) {
-          var cost = dp[pkv][BYPASS].cost + Math.abs(aTo - dp[pkv][BYPASS]._bypA) + sCost;
-          if (cost < dp[k][s].cost) { dp[k][s] = {cost, pk:pkv, ps:BYPASS}; }
-        }
-      }
-    } else {
-      // Von Wegpunkt (k-1) zu Mittelpunkt (k)
-      var wpNd = nodes[pkv];
-      for (let ps = 0; ps < NSTEPS; ps++) {       // Quell wp
-        if (dp[pkv][ps].cost >= INF) continue;
-        if (!wpNd.reach[ps]) continue;
-        var aFrom = -360 + ps*ASTEP;
-        // → reale Mittelpunkt-Zustände
-        for (let s = 0; s < NSTEPS; s++) {
-          if (!nd.reach[s]) continue;
-          var aTo   = -360 + s*ASTEP;
-          var cost  = dp[pkv][ps].cost + Math.abs(aTo - aFrom);
-          if (cost < dp[k][s].cost) { dp[k][s] = {cost, pk:pkv, ps}; }
-        }
-        // → Bypass: kostenfrei, aber nur wenn aFrom erreichbar am Mittelpunkt
-        // Bypass-A = aFrom (wird linear weitergegeben)
-        var midStep = Math.round((aFrom + 360) / ASTEP);
-        midStep = Math.max(0, Math.min(NSTEPS-1, midStep));
-        var bypOk = nd.reach[midStep]; // erreichbar am Mittelpunkt?
-        // Puffer-Check für Bypass
-        var bypBuf = 0;
-        for (let _b = 1; _b <= BUFFER_WIDTH; _b++) {
-          var _lo = midStep-_b, _hi = midStep+_b;
-          if ((_lo>=0 && !nd.reach[_lo])||(_hi<nd.reach.length&&!nd.reach[_hi])) { bypBuf=BUFFER_PENALTY/_b; break; }
-        }
-        var bypCost = dp[pkv][ps].cost + (bypOk ? bypBuf : 300); // hohe Strafe wenn gelb
-        if (bypCost < dp[k][BYPASS].cost) {
-          dp[k][BYPASS] = {cost:bypCost, pk:pkv, ps, _bypA:aFrom};
-        }
-      }
-    }
-  }
-
-  // Bestes Ende (letzter Wegpunkt)
-  var lastK = M - 1;
-  var best = -1, bestCost = INF;
-  for (let s = 0; s < NSTEPS; s++) {
-    if (dp[lastK][s].cost < bestCost) { bestCost = dp[lastK][s].cost; best = s; }
-  }
-  if (best < 0) {
-    // Fallback: ohne Singularitätssperre nochmal versuchen
-    for (let s = 0; s < NSTEPS; s++) {
-      if (!nodes[0].reach[s]) continue;
-      dp[0][s].cost = Math.abs((-360+s*ASTEP)-startA);
-    }
-    for (let k = 1; k < M; k++) { /* reset */ for (let s2=0;s2<dp[k].length;s2++) dp[k][s2]={cost:INF,pk:-1,ps:-1}; }
-    if (infoEl) infoEl.textContent = '⚠ Keine singularitätsfreie Lösung — zeige beste verfügbare Bahn';
+  c.strokeStyle = '#505055'; c.lineWidth = 1; c.strokeRect(G.ML + .5, G.MT + .5, G.CW - 1, G.CH - 1);
+  // Problemstreifen unter der Karte
+  c.fillStyle = '#1b1b1d'; c.fillRect(G.ML, G.MT + G.CH + 6, G.CW, 10);
+  c.save(); c.translate(12, G.MT + G.CH / 2); c.rotate(-Math.PI/2);
+  c.fillStyle = '#9a9a9f'; c.textAlign = 'center'; c.fillText('A [°]', 0, 0); c.restore();
+  if (!pos.length) {
+    c.fillStyle = '#9a9a9f'; c.font = '13px sans-serif'; c.fillText('Kein Programm geladen', G.ML + G.CW/2, G.MT + G.CH/2);
     return;
   }
-
-  // ── Pfad zurückverfolgen ──────────────────────────────
-  var path = new Array(M);
-  path[lastK] = best;
-  for (let k = M-2; k >= 0; k--) {
-    var nxt = path[k+1];
-    path[k] = dp[k+1][nxt].ps;
+  // Programm-A (grau). Sprünge über 180° (Umbruch ±180) unterbrechen die Linie.
+  if (_aLayers.prog) {
+    c.strokeStyle = 'rgba(200,204,214,.75)'; c.lineWidth = 1; c.setLineDash([3, 3]);
+    c.beginPath();
+    for (let i = 0; i < pos.length; i++) {
+      var px = _ax(_aPlotDists[i]), py = _ay(pos[i].A);
+      if (i === 0 || Math.abs(pos[i].A - pos[i-1].A) > 180) c.moveTo(px, py); else c.lineTo(px, py);
+    }
+    c.stroke(); c.setLineDash([]);
   }
-
-  // ── Ergebnis extrahieren ──────────────────────────────
-  _aPlotEdits = {};
-  _aPlotBad = null;
-
-  // Programm-A stetig fortsetzen (Sprünge über ±180° entfernen), damit die Interpolation
-  // zwischen Rasterpunkten nicht über einen 360°-Sprung hinweg rechnet
-  var U = new Float64Array(N);
-  U[0] = pos[0].A;
-  for (let i = 1; i < N; i++) {
-    var d = pos[i].A - pos[i-1].A;
-    U[i] = U[i-1] + d - 360 * Math.round(d / 360);
+  // Verifikation: kritische Punkte im Streifen
+  if (_aVerify && _aVerify.bad.length) {
+    var B = _aVerify.bad, K = _aVerify.kind;
+    for (let k = 0; k < B.length; k++) {
+      c.fillStyle = AMAP_KIND_COL[K[k]] || '#ff4d6a';
+      c.fillRect(Math.floor(_ax(_aPlotDists[B[k]])), G.MT + G.CH + 6, 2, 10);
+    }
   }
-  // Neue A-Werte der Rasterpunkte als Änderung gegenüber dem (stetigen) Programm-A
-  var offs = [];
-  for (let k = 0; k < M; k++) {
-    if (nodes[k].type === 'wp') offs.push(-360 + path[k] * ASTEP - U[nodes[k].idx]);
+}
+
+function _aDrawPath(c) {
+  if (!_aPath || !_aLayers.path) return;
+  c.strokeStyle = '#3ddc84'; c.lineWidth = 2;
+  c.beginPath();
+  _aPath.forEach(function(n, k) { var x = _ax(n.d), y = _ay(n.a); if (k) c.lineTo(x, y); else c.moveTo(x, y); });
+  c.stroke();
+  _aPath.forEach(function(n, k) {
+    var x = _ax(n.d), y = _ay(n.a), act = _aDrag && _aDrag.idx === k;
+    c.fillStyle = act ? '#ffffff' : '#d8f03c';
+    c.beginPath(); c.arc(x, y, act ? 5 : 3.5, 0, 2*Math.PI); c.fill();
+  });
+}
+
+function _aDrawCursor(c, pos) {
+  if (typeof sim === 'undefined' || pos.length < 2) return;
+  var N = pos.length, i0 = Math.max(0, Math.min(N-1, Math.floor(sim.t))), i1 = Math.min(i0+1, N-1), fr = sim.t - i0;
+  var d = _aPlotDists[i0] + (_aPlotDists[i1] - _aPlotDists[i0]) * fr, x = _ax(d);
+  c.strokeStyle = 'rgba(85,174,244,.7)'; c.lineWidth = 1; c.setLineDash([4, 3]);
+  c.beginPath(); c.moveTo(x, _aG.MT); c.lineTo(x, _aG.MT + _aG.CH); c.stroke(); c.setLineDash([]);
+  var a = pos[i0].A;
+  c.fillStyle = '#55aef4'; c.beginPath(); c.arc(x, _ay(a), 4, 0, 2*Math.PI); c.fill();
+  if (!_aHover) {
+    var info = document.getElementById('aplot-info');
+    if (info) info.textContent = 'Pos ' + (i0+1) + '/' + N + ' · ' + (d/1000).toFixed(3) + ' m · A ' + a.toFixed(2) + '°';
   }
-  // Alle Punkte anpassen: Änderung entlang der Bahn (Bogenlänge) zwischen den Rasterpunkten interpolieren.
-  // So bleibt ein im Programm vorhandener A-Verlauf erhalten und wird nur verschoben.
+}
+
+function aPlotDraw() {
+  var canvas = document.getElementById('aplot-canvas'), panel = document.getElementById('aplot-panel');
+  if (!canvas || !panel || getComputedStyle(panel).display === 'none') return;
+  if (!_aG.W) _aLayoutCanvas();
+  var pos = _aPos(), G = _aG, dpr = G.dpr;
+  if (_aPlotDists.length !== pos.length) _aPlotCalcDists(pos);
+  var pw = Math.round(G.W * dpr), ph = Math.round(G.H * dpr);
+  if (!_aPlotCache || _aPlotCache.width !== pw || _aPlotCache.height !== ph || _aPlotCacheVer !== _aPlotVersion) {
+    if (!_aPlotCache) _aPlotCache = document.createElement('canvas');
+    _aPlotCache.width = pw; _aPlotCache.height = ph; _aPlotCacheVer = _aPlotVersion;
+    var c2 = _aPlotCache.getContext('2d');
+    c2.setTransform(dpr, 0, 0, dpr, 0, 0);
+    _aDrawStatic(c2, pos);
+  }
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(_aPlotCache, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!pos.length) return;
+  _aDrawPath(ctx);
+  _aDrawCursor(ctx, pos);
+}
+function aPlotInvalidate() {
+  _aPlotCalcDists(_aPos());
+  _aCheckMap();
+  _aMapImg = null;
+  _aPlotVersion++;
+  aPlotDraw();
+}
+
+// ── MAP erzeugen ─────────────────────────────────────────
+// Scanpunkte gleichmäßig über die Bahnlänge, innerhalb jedes Abschnitts versetzt (Goldener Schnitt),
+// damit periodische Bahnen (z. B. Ecken jeder Lage) nicht immer an derselben Stelle getroffen werden.
+function aPlotStartScan() {
+  var pos = _aPos();
+  if (!pos.length) { aPlotMsg('Kein Programm geladen'); return; }
   _aPlotCalcDists(pos);
-  for (let j = 0; j < SC.idxs.length; j++) {
-    var a = SC.idxs[j], b = (j < SC.idxs.length-1) ? SC.idxs[j+1] : a + 1;
-    for (let i = a; i < Math.min(b, N); i++) {
-      var off = offs[j];
-      if (i > a && j < offs.length-1) {
-        var span = _aPlotDists[b] - _aPlotDists[a];
-        var f = span > 0 ? (_aPlotDists[i] - _aPlotDists[a]) / span : (i - a) / (b - a);
-        off = offs[j] + (offs[j+1] - offs[j]) * f;
+  var L = _aTotal(), N = pos.length;
+  var resSel = document.getElementById('aplot-res').value;
+  var astep = parseFloat(document.getElementById('aplot-astep').value) || 3;
+  var nA = Math.round((AMAP_MAX - AMAP_MIN) / astep) + 1;
+  var S = resSel === 'all' ? N : resSel === 'auto' ? Math.min(N, 1000) : Math.min(N, parseInt(resSel, 10));
+  var targets = [];
+  if (S >= N) { for (let i = 0; i < N; i++) targets.push({ d:_aPlotDists[i], p:pos[i] }); }
+  else {
+    targets.push({ d:0, p:pos[0] });
+    for (let j = 0; j < S; j++) { var d = (j + ((j * 0.6180339887) % 1)) / S * L; targets.push({ d:d, p:_aPoseAt(d, pos) }); }
+    targets.push({ d:L, p:pos[N-1] });
+    targets.sort(function(a, b) { return a.d - b.d; });
+  }
+  // Programm-A stetig fortgesetzt (Umbruch ±180° entfernt), auf den Kartenbereich begrenzt
+  var anchorA = new Float64Array(N); anchorA[0] = pos[0].A;
+  for (let i = 1; i < N; i++) { var dA = pos[i].A - pos[i-1].A; anchorA[i] = anchorA[i-1] + dA - 360 * Math.round(dA / 360); }
+  for (let i = 0; i < N; i++) { while (anchorA[i] > AMAP_MAX) anchorA[i] -= 360; while (anchorA[i] < AMAP_MIN) anchorA[i] += 360; }
+  var scanId = ++_aScanId, samples = [], si = 0, prevQs = null;
+  var overlay = document.getElementById('aplot-scan-overlay'), bar = document.getElementById('aplot-scan-bar');
+  var pctEl = document.getElementById('aplot-scan-pct'), msgEl = document.getElementById('aplot-scan-msg');
+  if (overlay) overlay.style.display = 'flex';
+  aPlotMsg('');
+  var t0 = performance.now();
+  function step() {
+    if (scanId !== _aScanId) return;
+    var tEnd = performance.now() + 15;
+    do {
+      // Achsstellungen laufen stetig entlang der Bahn: jede Zeile startet mit der Achsstellung derselben Zeile
+      // der vorigen Spalte. Eine waagerechte Linie in der Karte entspricht so genau der Roboterbewegung.
+      // Zeilen ohne Vorgänger werden stetig von der Nachbarzeile aus gefüllt; fehlt alles (erste Spalte oder
+      // Spalte nach vollständig gesperrter Spalte), beginnt die Spalte bei der Achsstellung des Programms.
+      var t = targets[si], p = t.p, code = new Uint8Array(nA), done = new Uint8Array(nA), qs = new Array(nA).fill(null), r;
+      var havePrev = prevQs && prevQs.some(function(q) { return q; });
+      if (havePrev) {
+        for (let s = 0; s < nA; s++) if (prevQs[s]) {
+          r = _aClassify(p, AMAP_MIN + s * astep, prevQs[s], true);
+          code[s] = r.code; done[s] = 1; qs[s] = r.angles;
+        }
+      } else {
+        // Anfangsspalte: jede Zeile darf mit beliebiger A6-Umdrehung beginnen (legt die Anfahrbewegung fest)
+        var i0 = _aNearestIdx(t.d), s0 = Math.max(0, Math.min(nA - 1, Math.round((anchorA[i0] - AMAP_MIN) / astep)));
+        for (let dir = 1; dir >= -1; dir -= 2) {
+          var qa = _aStartQ(i0);
+          for (let s = dir > 0 ? s0 : s0 - 1; s >= 0 && s < nA; s += dir) {
+            r = _aClassify(p, AMAP_MIN + s * astep, qa, false);
+            code[s] = r.code; done[s] = 1; qs[s] = r.angles; if (r.angles) qa = r.angles;
+          }
+        }
       }
-      var aI = Math.round((U[i] + off) * 1000) / 1000;
-      if (Math.abs(aI - pos[i].A) > 0.5) _aPlotEdits[i] = aI;
-    }
+      for (let s = 1; s < nA; s++) if (!done[s] && qs[s-1]) {
+        r = _aClassify(p, AMAP_MIN + s * astep, qs[s-1], true); code[s] = r.code; done[s] = 1; qs[s] = r.angles;
+      }
+      for (let s = nA - 2; s >= 0; s--) if (!done[s] && qs[s+1]) {
+        r = _aClassify(p, AMAP_MIN + s * astep, qs[s+1], true); code[s] = r.code; done[s] = 1; qs[s] = r.angles;
+      }
+      // Zeilen ohne erreichbaren Nachbarn: von irgendeiner gültigen Stellung der Spalte aus prüfen
+      var anyQ = qs.find(function(q) { return q; }) || _aStartQ(_aNearestIdx(t.d));
+      for (let s = 0; s < nA; s++) if (!done[s]) {
+        r = _aClassify(p, AMAP_MIN + s * astep, anyQ, true); code[s] = r.code; qs[s] = r.angles;
+      }
+      prevQs = qs;
+      samples.push({ d:t.d, code:code });
+      si++;
+    } while (si < targets.length && performance.now() < tEnd);
+    var pct = Math.round(si / targets.length * 100);
+    if (bar) bar.style.width = pct + '%';
+    if (pctEl) pctEl.textContent = pct + '%';
+    if (msgEl) msgEl.textContent = 'MAP: ' + si + ' / ' + targets.length + ' Bahnpunkte';
+    if (si < targets.length) { setTimeout(step, 0); return; }
+    if (overlay) overlay.style.display = 'none';
+    _aMap = { sig:_aSig(pos), L:L, astep:astep, nA:nA, samples:samples };
+    _aMapImg = null; _aVerify = null;
+    aPlotMsg('MAP: ' + samples.length + ' Bahnpunkte × ' + nA + ' A-Werte in ' + ((performance.now() - t0)/1000).toFixed(1) + ' s');
+    aPlotAutoPath();
   }
-
-  // Bei Raster > 1: jeden geänderten Zwischenpunkt mit seinem neuen A per IK prüfen
-  var bad = 0;
-  if (SC.k > 1) {
-    _aPlotBad = new Uint8Array(N);
-    var q = jointAngles.slice();
-    for (let i = 0; i < N; i++) {
-      if (_aPlotEdits[i] === undefined) continue;
-      var p = pos[i], r = ikPreciseA(p.X, p.Y, p.Z, _aPlotEdits[i], p.B, p.C, q);
-      if (r && r.ok) q = r.angles; else { _aPlotBad[i] = 1; bad++; }
-    }
-  }
-
-  var hint = document.getElementById('aplot-edit-hint');
-  if (hint) hint.style.display = '';
-  if (infoEl) infoEl.textContent = bad
-    ? '⚠ ' + bad + ' Punkt(e) nicht erreichbar (rot) — feineres Raster'
-    : '⚡ Auto-Lösung: ' + Object.keys(_aPlotEdits).length + ' Punkte geändert, Δ' + bestCost.toFixed(0) + '° — Übernehmen zum Anwenden';
-  aPlotInvalidate();
+  setTimeout(step, 0);
 }
 
+// ── Automatische grüne Linie ─────────────────────────────
+// 1) Karte in Spalten: gesperrt = unerreichbar, Achsgrenze oder singulär
+// 2) DP über Spalten: kurze A-Änderungen, Abstand zu Störbereichen, keine Querung gesperrter Felder
+// 3) Ergebnis zu wenigen Knoten vereinfachen (gerade Stücke, solange sie frei bleiben)
+function aPlotAutoPath() {
+  if (!_aMap) { aPlotMsg('Erst MAP erzeugen'); return; }
+  var pos = _aPos(), L = _aMap.L, nA = _aMap.nA, astep = _aMap.astep;
+  var C = Math.max(2, Math.min(_aMap.samples.length, 600));
+  var codes = _aColumnCodes(C);
+  var blocked = new Uint8Array(C * nA), pre = new Int32Array(C * (nA + 1));
+  for (let c = 0; c < C; c++) for (let s = 0; s < nA; s++) {
+    var b = codes[c*nA + s] ? 1 : 0;
+    blocked[c*nA + s] = b;
+    pre[c*(nA+1) + s + 1] = pre[c*(nA+1) + s] + b;
+  }
+  function blockedRange(c, s0, s1) { if (s0 > s1) { var t = s0; s0 = s1; s1 = t; } return pre[c*(nA+1) + s1 + 1] - pre[c*(nA+1) + s0]; }
+  // Abstandsstrafe: Sicherheitsabstand in Grad zu gesperrten Feldern (in A-Richtung, eigene und Nachbarspalten)
+  var safe = Math.max(0, parseFloat(document.getElementById('aplot-safe').value) || 0);
+  var R = Math.round(safe / astep), pen = new Float32Array(C * nA);
+  if (R > 0) for (let c = 0; c < C; c++) {
+    for (let s = 0; s < nA; s++) {
+      var dmin = R + 1;
+      for (let cc = Math.max(0, c-1); cc <= Math.min(C-1, c+1); cc++)
+        for (let k = 0; k <= R && k < dmin; k++)
+          if ((s-k >= 0 && blocked[cc*nA + s-k]) || (s+k < nA && blocked[cc*nA + s+k])) { dmin = k; break; }
+      if (dmin <= R) pen[c*nA + s] = (R + 1 - dmin) * 4;
+    }
+  }
+  var BIG = 1e5, WDEV = 0.02, progA = new Float64Array(C);
+  for (let c = 0; c < C; c++) progA[c] = pos[_aNearestIdx((c + 0.5) / C * L)].A;
+  function nodeCost(c, s) {
+    if (blocked[c*nA + s]) return BIG;
+    var dev = Math.abs(AMAP_MIN + s*astep - progA[c]) / astep;
+    return pen[c*nA + s] + WDEV * dev;
+  }
+  var cost = new Float64Array(nA), prev = new Int32Array(C * nA), nc = new Float64Array(nA);
+  for (let s = 0; s < nA; s++) cost[s] = nodeCost(0, s);
+  for (let c = 1; c < C; c++) {
+    for (let s = 0; s < nA; s++) {
+      var own = nodeCost(c, s), best = Infinity, bp = s;
+      for (let s0 = 0; s0 < nA; s0++) {
+        if (cost[s0] >= best) continue;
+        var jump = Math.abs(s - s0), cst = cost[s0] + jump;
+        if (jump && (blockedRange(c-1, s0, s) || blockedRange(c, s0, s))) cst += BIG;
+        if (cst < best) { best = cst; bp = s0; }
+      }
+      nc[s] = best + own; prev[c*nA + s] = bp;
+    }
+    cost.set(nc);
+  }
+  var sEnd = 0;
+  for (let s = 1; s < nA; s++) if (cost[s] < cost[sEnd]) sEnd = s;
+  var rows = new Int32Array(C); rows[C-1] = sEnd;
+  for (let c = C-1; c > 0; c--) rows[c-1] = prev[c*nA + rows[c]];
+  var crosses = cost[sEnd] >= BIG;
+
+  // Vereinfachen: vom aktuellen Knoten so weit wie möglich gerade, solange jede Spalte frei bleibt
+  // und der Abstand zu Störbereichen nicht schlechter wird als auf der DP-Lösung
+  function colD(c) { return c === 0 ? 0 : c === C-1 ? L : (c + 0.5) / C * L; }
+  function rowA(s) { return AMAP_MIN + s * astep; }
+  // Eine Gerade ist zulässig, wenn sie in keiner Spalte schlechter liegt als die DP-Lösung
+  // (nicht gesperrt, wo die DP frei ist; nicht näher an Störbereichen)
+  function lineOk(c0, c1) {
+    var a0 = rowA(rows[c0]), a1 = rowA(rows[c1]), last = rows[c0];
+    for (let c = c0 + 1; c <= c1; c++) {
+      var s = Math.round((a0 + (a1 - a0) * (c - c0) / (c1 - c0) - AMAP_MIN) / astep);
+      var dpBlocked = blocked[c*nA + rows[c]];
+      if (blocked[c*nA + s] > dpBlocked || pen[c*nA + s] > pen[c*nA + rows[c]] + 1e-6) return false;
+      if (!dpBlocked && s !== last && (blockedRange(c-1, last, s) || blockedRange(c, last, s))) return false;
+      last = s;
+    }
+    return true;
+  }
+  var nodes = [{ d:0, a:rowA(rows[0]) }], i = 0;
+  while (i < C - 1) {
+    var j = i + 1;
+    while (j + 1 < C && lineOk(i, j + 1)) j++;
+    nodes.push({ d:colD(j), a:rowA(rows[j]) });
+    i = j;
+  }
+  _aPath = nodes;
+  aPlotMsg(crosses ? 'Kein Weg ohne Störbereiche gefunden — bestmögliche Linie, kritische Stellen siehe Streifen'
+                   : 'Weg automatisch angelegt (' + nodes.length + ' Knoten)');
+  _aPathChanged();
+}
+
+// Grüne Linie aus dem Programm-A übernehmen (zum Nacharbeiten): Programm-A stetig fortgesetzt,
+// dann auf wenige Knoten reduziert (Abweichung ≤ 0,5°)
+function aPlotPathFromProgram() {
+  var pos = _aPos(); if (!pos.length) return;
+  _aPlotCalcDists(pos);
+  var U = [pos[0].A];
+  for (let i = 1; i < pos.length; i++) { var d = pos[i].A - pos[i-1].A; U.push(U[i-1] + d - 360 * Math.round(d / 360)); }
+  var keep = new Uint8Array(pos.length); keep[0] = keep[pos.length-1] = 1;
+  var stack = [[0, pos.length-1]];
+  while (stack.length) {
+    var seg = stack.pop(), a = seg[0], b = seg[1], worst = -1, wd = 0.5;
+    for (let i = a + 1; i < b; i++) {
+      var f = (_aPlotDists[i] - _aPlotDists[a]) / ((_aPlotDists[b] - _aPlotDists[a]) || 1);
+      var e = Math.abs(U[i] - (U[a] + (U[b] - U[a]) * f));
+      if (e > wd) { wd = e; worst = i; }
+    }
+    if (worst >= 0) { keep[worst] = 1; stack.push([a, worst], [worst, b]); }
+  }
+  var nodes = [];
+  for (let i = 0; i < pos.length; i++) if (keep[i]) nodes.push({ d:_aPlotDists[i], a:Math.max(AMAP_MIN, Math.min(AMAP_MAX, U[i])) });
+  if (nodes.length > 1 && nodes[nodes.length-1].d === nodes[nodes.length-2].d) nodes.pop();
+  _aPath = nodes;
+  aPlotMsg('Linie aus Programm (' + nodes.length + ' Knoten)');
+  _aPathChanged();
+}
+
+// ── Verifikation: jeden Programmpunkt mit dem A der grünen Linie prüfen ──
+function _aPathChanged() {
+  _aVerify = null;
+  var hint = document.getElementById('aplot-edit-hint');
+  if (hint) hint.style.display = _aPath ? '' : 'none';
+  aPlotInvalidate();
+  _aVerifyStart();
+}
+function _aVerifyStart() {
+  var el = document.getElementById('aplot-verify');
+  var pos = _aPos();
+  if (!_aPath || !pos.length) { if (el) { el.textContent = '—'; el.className = ''; } return; }
+  var id = ++_aVerifyId, N = pos.length, i = 0;
+  var q = _aStartQ(0);
+  var bad = [], kind = [];
+  if (el) { el.textContent = 'prüfe…'; el.className = 'run'; }
+  function step() {
+    if (id !== _aVerifyId) return;
+    var tEnd = performance.now() + 15;
+    for (; i < N && performance.now() < tEnd; i++) {
+      var p = pos[i], r = _aClassify(p, _aPathA(_aPlotDists[i]), q, i > 0), k = 0;
+      if (r.code & CELL_REACH) k = 1; else if (r.code & CELL_LIMIT) k = 2; else if (r.code & CELL_SING) k = 3;
+      if (r.angles) {
+        if (!k && i > 0) { for (let j = 0; j < 6; j++) if (Math.abs(r.angles[j] - q[j]) > 45) { k = 4; break; } }
+        q = r.angles;
+      }
+      if (k) { bad.push(i); kind.push(k); }
+    }
+    if (i < N) { if (el) el.textContent = 'prüfe… ' + Math.round(i / N * 100) + '%'; setTimeout(step, 0); return; }
+    _aVerify = { bad:Int32Array.from(bad), kind:Uint8Array.from(kind) };
+    if (el) {
+      if (!bad.length) { el.textContent = 'OK — alle ' + N + ' Punkte'; el.className = 'ok'; }
+      else {
+        var cnt = {}; kind.forEach(function(k) { cnt[k] = (cnt[k] || 0) + 1; });
+        el.textContent = bad.length + ' kritisch: ' + Object.keys(cnt).map(function(k) { return cnt[k] + ' ' + AMAP_KIND_TXT[k]; }).join(', ')
+          + ' (Punkt ' + (bad[0]+1) + '–' + (bad[bad.length-1]+1) + ')';
+        el.className = 'bad';
+      }
+    }
+    _aPlotVersion++; aPlotDraw();
+  }
+  setTimeout(step, 0);
+}
+
+// ── Übernehmen / Zurücksetzen ────────────────────────────
 function aPlotReset() {
-  _aPlotEdits = {};
-  var hint = document.getElementById('aplot-edit-hint');
-  if (hint) hint.style.display = 'none';
-  aPlotInvalidate();
+  if (!_aMap) { _aPath = null; _aPathChanged(); return; }
+  aPlotAutoPath();
 }
-
 function aPlotApply() {
-  var pos = parsedData.positions;
-  if (!pos.length || !Object.keys(_aPlotEdits).length) return;
+  var pos = _aPos();
+  if (!pos.length || !_aPath) { aPlotMsg('Keine Linie vorhanden'); return; }
+  _aPlotCalcDists(pos);
+  _aPlotEdits = {};
+  for (let i = 0; i < pos.length; i++) {
+    var a = Math.round(_aPathA(_aPlotDists[i]) * 1000) / 1000;
+    if (Math.abs(a - pos[i].A) > 0.0005) _aPlotEdits[i] = a;
+  }
+  var nEd = Object.keys(_aPlotEdits).length;
+  if (!nEd) { aPlotMsg('Programm entspricht bereits der Linie'); return; }
   var code = document.getElementById('code-input');
   var lines = code.value.split('\n');
-
   // A-Wert in der n-ten Koordinatengruppe {…} einer Zeile ersetzen; false wenn die Gruppe fehlt
   function setA(li, groupIdx, newA) {
     var n = -1, done = false;
@@ -2942,9 +2835,7 @@ function aPlotApply() {
     });
     return done;
   }
-
-  // Jeder Punkt kennt seine Programmzeile (lineNum). LIN, LIN_EXTRUDE, SLIN, PTP: 1. Gruppe;
-  // CIRC/CIRC_EXTRUDE: Hilfspunkt = 1. Gruppe, Zielpunkt = 2. Gruppe bzw. Folgezeile "{…}"
+  // LIN, LIN_EXTRUDE, SLIN, PTP: 1. Gruppe; CIRC/CIRC_EXTRUDE: Zielpunkt = 2. Gruppe bzw. Folgezeile "{…}"
   Object.keys(_aPlotEdits).forEach(function(idxStr) {
     var p = pos[+idxStr], newA = _aPlotEdits[idxStr];
     if (!p || p.lineNum === undefined) return;
@@ -2954,36 +2845,115 @@ function aPlotApply() {
       if (/^\s*\{/.test(lines[li])) { setA(li, 0, newA); return; }
     }
   });
-
   code.value = lines.join('\n');
   _aPlotEdits = {};
   document.getElementById('aplot-edit-hint').style.display = 'none';
   parseAndLoad();
-  aPlotMsg('✓ Übernommen');
+  aPlotMsg('Übernommen: ' + nEd + ' A-Werte geändert');
 }
 
-// Drag-Handler fuer aplot-panel
+// Roboter in der Szene auf A an Bahnpunkt idx stellen (Vorschau beim Ziehen)
+function aPlotLivePreview(idx, newA) {
+  var p = _aPos()[idx]; if (!p) return;
+  var warmQ = (ikTable && ikTable[idx] && ikTable[idx].angles) ? ikTable[idx].angles : jointAngles.slice();
+  var res = ikPreciseA(p.X, p.Y, p.Z, newA, p.B, p.C, warmQ);
+  if (res && res.ok) applyAngles(res.angles);
+}
+
+// ── Maus: Knoten ziehen, Knoten auf Linie einfügen, Rechtsklick löscht, Klick setzt Simulationsposition ──
 (function() {
-  var hdr = null, panel = null, ox = 0, oy = 0;
+  function local(e) { var r = document.getElementById('aplot-canvas').getBoundingClientRect(); return { x:e.clientX - r.left, y:e.clientY - r.top }; }
+  function hitNode(m) {
+    if (!_aPath || !_aLayers.path) return -1;
+    var best = -1, bd = 9;
+    _aPath.forEach(function(n, k) { var dd = Math.hypot(_ax(n.d) - m.x, _ay(n.a) - m.y); if (dd < bd) { bd = dd; best = k; } });
+    return best;
+  }
+  function nearLine(m) { return _aPath && _aLayers.path && Math.abs(_ay(_aPathA(_aXtoD(m.x))) - m.y) < 6; }
+  function cellInfo(d, a) {
+    if (!_aMap) return '';
+    var S = _aMap.samples, lo = 0, hi = S.length - 1;
+    while (hi - lo > 1) { var mm = (lo + hi) >> 1; if (S[mm].d <= d) lo = mm; else hi = mm; }
+    var k = Math.abs(S[hi].d - d) < Math.abs(d - S[lo].d) ? hi : lo;
+    var code = S[k].code[Math.round((a - AMAP_MIN) / _aMap.astep)];
+    if (code & CELL_REACH) return 'unerreichbar';
+    if (code & CELL_LIMIT) return 'Achsgrenze';
+    if (code & CELL_SING) return 'singulär (' + ['wrist','shoulder','elbow'].filter(function(t) { return code & SING_BIT[t]; })
+      .map(function(t) { return { wrist:'Handgelenk', shoulder:'Schulter', elbow:'Ellbogen' }[t]; }).join(', ') + ')';
+    return 'frei';
+  }
+  function showHover(m) {
+    var pos = _aPos(), info = document.getElementById('aplot-info');
+    if (!pos.length || !info) return;
+    if (m.x < _aG.ML || m.x > _aG.ML + _aG.CW || m.y < _aG.MT || m.y > _aG.MT + _aG.CH) { _aHover = null; return; }
+    _aHover = m;
+    var d = _aXtoD(m.x), a = _aYtoA(m.y), i = _aNearestIdx(d), p = pos[i];
+    var txt = 'Pos ' + (i+1) + ' · Zeile ' + (p.lineNum !== undefined ? p.lineNum + 1 : '–') + ' · ' + (d/1000).toFixed(3) + ' m · A ' + a.toFixed(1) + '°';
+    var ci = cellInfo(d, a); if (ci) txt += ' · ' + ci;
+    if (_aPath) txt += ' · Linie ' + _aPathA(d).toFixed(1) + '°';
+    info.textContent = txt;
+  }
   document.addEventListener('DOMContentLoaded', function() {
-    hdr   = document.getElementById('aplot-hdr');
-    panel = document.getElementById('aplot-panel');
-    if (!hdr || !panel) return;
-    hdr.addEventListener('mousedown', function(e) {
-      var r = panel.getBoundingClientRect();
-      ox = e.clientX - r.left; oy = e.clientY - r.top;
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+    var cv = document.getElementById('aplot-canvas'); if (!cv) return;
+    cv.addEventListener('mousedown', function(e) {
+      if (e.button !== 0) return;
+      var m = local(e), k = hitNode(m);
+      if (k < 0 && nearLine(m)) {
+        var d = _aXtoD(m.x);
+        k = _aPath.findIndex(function(n) { return n.d > d; });
+        if (k <= 0) return;
+        _aPath.splice(k, 0, { d:d, a:_aPathA(d) });
+      }
+      if (k >= 0) { _aDrag = { idx:k }; cv.style.cursor = 'grabbing'; e.preventDefault(); aPlotDraw(); return; }
+      // Klick in die Karte: Simulation an diese Bahnstelle setzen
+      var pos = _aPos();
+      if (pos.length && m.x >= _aG.ML && m.x <= _aG.ML + _aG.CW) {
+        var i = _aNearestIdx(_aXtoD(m.x));
+        if (sim.playing) { pauseSim(); setStatus('paused', 'PAUSED'); }
+        applySimT(i);
+        var si = parsedData.stepOfPos ? parsedData.stepOfPos[i] : -1;
+        if (si >= 0) applyStep(si);
+      }
     });
-    function onMove(e) {
-      panel.style.left   = (e.clientX - ox) + 'px';
-      panel.style.top    = (e.clientY - oy) + 'px';
-      panel.style.bottom = 'auto';
-    }
-    function onUp() {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    }
+    cv.addEventListener('contextmenu', function(e) {
+      var k = hitNode(local(e));
+      if (k > 0 && k < _aPath.length - 1) { e.preventDefault(); _aPath.splice(k, 1); _aPathChanged(); }
+    });
+    cv.addEventListener('mousemove', function(e) {
+      var m = local(e);
+      if (!_aDrag) { cv.style.cursor = hitNode(m) >= 0 ? 'grab' : nearLine(m) ? 'copy' : 'crosshair'; }
+      showHover(m); if (!_aDrag) aPlotDraw();
+    });
+    cv.addEventListener('mouseleave', function() { _aHover = null; aPlotDraw(); });
+    document.addEventListener('mousemove', function(e) {
+      if (!_aDrag) return;
+      var m = local(e), P = _aPath, k = _aDrag.idx, n = P[k];
+      n.a = Math.round(_aYtoA(m.y) * 2) / 2;
+      if (k > 0 && k < P.length - 1) {
+        var gap = _aTotal() * 0.001;
+        n.d = Math.max(P[k-1].d + gap, Math.min(P[k+1].d - gap, _aXtoD(m.x)));
+      }
+      var info = document.getElementById('aplot-info');
+      if (info) info.textContent = 'Knoten ' + (k+1) + ' · ' + (n.d/1000).toFixed(3) + ' m · A ' + n.a.toFixed(1) + '°';
+      aPlotLivePreview(_aNearestIdx(n.d), n.a);
+      aPlotDraw();
+    });
+    document.addEventListener('mouseup', function() {
+      if (!_aDrag) return;
+      _aDrag = null; document.getElementById('aplot-canvas').style.cursor = 'crosshair';
+      _aPathChanged();
+    });
+    // Höhe des Panels an der Oberkante ziehen
+    var grip = document.getElementById('aplot-grip'), panel = document.getElementById('aplot-panel');
+    if (grip) grip.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      var y0 = e.clientY, h0 = panel.getBoundingClientRect().height;
+      function mv(ev) { panel.classList.remove('max'); panel.style.setProperty('--aplot-h', Math.max(220, Math.min(window.innerHeight - 120, h0 + y0 - ev.clientY)) + 'px'); _aPlotFitWidth(); aPlotInvalidate(); }
+      function up() { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); }
+      document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
+    });
+    if (window.ResizeObserver) new ResizeObserver(function() { _aLayoutCanvas(); _aPlotVersion++; aPlotDraw(); })
+      .observe(document.querySelector('#aplot-panel .aplot-body'));
   });
 })();
 
