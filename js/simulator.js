@@ -231,6 +231,108 @@ function solveLM(cfg) {
   return {angles: bestQ, score: bestScore, ok};
 }
 
+// ── Analytische IK (Zentralhand) ─────────────────────────────────────────────
+// Kette: Rz,Ry,Ry,Rx,Ry,Rx (wie fkAll). Bei A4/A5-Versatz nur entlang X und A6 ohne Versatz
+// schneiden sich die Handachsen in p4 (Zentralhand) -> geschlossene Lösung, bis zu 8 Konfigurationen.
+// Jede Lösung wird per FK verifiziert; ohne gültige Lösung liefert die Funktion null (-> numerische IK).
+const R2D = 180/Math.PI;
+function ikAnalyticSupported() {
+  const J = JOINTS_DEF;
+  return J.length === 6 &&
+    Math.abs(J[3].off[1]) < 1e-9 && Math.abs(J[3].off[2]) < 1e-9 &&
+    Math.abs(J[4].off[1]) < 1e-9 && Math.abs(J[4].off[2]) < 1e-9 &&
+    Math.abs(J[5].off[1]) < 1e-9 && Math.abs(J[5].off[2]) < 1e-9;
+}
+
+// Alle Gelenklösungen (Grad) für eine TCP-Pose; ohne Achsgrenzen-/360°-Auswahl
+function ikAnalyticAll(tx, ty, tz, ta, tb, tc) {
+  const J = JOINTS_DEF, S = FK_SIGNS;
+  const Rt = rotZYX(ta, tb, tc);
+  // Flansch aus TCP (Umkehr von fkAll): R6 = Rt * R_tcp^T, p6 = P - R6 * R_fc * tcp
+  const R_fc = mRy(Math.PI/2);
+  const R_tcp = mMul(R_fc, rotZYX(TCP_DEF.a, TCP_DEF.b, TCP_DEF.c));
+  const R6 = mMul(Rt, mT(R_tcp));
+  const pt = mVec(R6, mVec(R_fc, [TCP_DEF.x, TCP_DEF.y, TCP_DEF.z]));   // wie fkAll: rot * R_fc * tcp
+  const p6 = [tx - pt[0], ty - pt[1], tz - pt[2]];
+  // Handwurzel p4 = p6 - (L5+L6) * x-Achse(R6)
+  const L56 = J[4].off[0] + J[5].off[0];
+  const px = p6[0] - L56*R6[0][0], py = p6[1] - L56*R6[1][0], pz = p6[2] - L56*R6[2][0];
+  const o1 = J[0].off, o2 = J[1].off, o3 = J[2].off;
+  const ys = o1[1] + o2[1] + o3[1];                 // konstanter Y-Versatz im A1-System
+  const wx = o3[0] + J[3].off[0], wz = o3[2];       // Unterarm bis Handwurzel (x,z)
+  const r2 = px*px + py*py - ys*ys;
+  if (r2 < 0) return [];
+  const out = [];
+  for (const sx of [1, -1]) {                        // vorne / über Kopf
+    const Xp = sx*Math.sqrt(r2);
+    const th1 = Math.atan2(py, px) - Math.atan2(ys, Xp);
+    const Qx = Xp - o1[0], Qz = pz - o1[2];
+    const A = o2[0]*wx + o2[2]*wz, B = o2[0]*wz - o2[2]*wx;
+    const K = (Qx*Qx + Qz*Qz - (o2[0]*o2[0] + o2[2]*o2[2]) - (wx*wx + wz*wz)) / 2;
+    const AB = Math.hypot(A, B);
+    if (AB < 1e-9 || Math.abs(K) > AB*(1+1e-12)) continue;
+    const base = Math.atan2(B, A), dlt = Math.acos(Math.max(-1, Math.min(1, K/AB)));
+    for (const th3 of [base + dlt, base - dlt]) {    // Ellbogen oben / unten
+      const c3 = Math.cos(th3), s3 = Math.sin(th3);
+      const ux = o2[0] + wx*c3 + wz*s3, uz = o2[2] - wx*s3 + wz*c3;
+      const th2 = Math.atan2(uz, ux) - Math.atan2(Qz, Qx);
+      const R3 = mMul(mRz(th1), mMul(mRy(th2), mRy(th3)));
+      const M = mMul(mT(R3), R6);                    // = Rx(th4) Ry(th5) Rx(th6)
+      const c5 = Math.max(-1, Math.min(1, M[0][0]));
+      for (const sw of [1, -1]) {                    // Handgelenk normal / Flip
+        const th5 = sw*Math.acos(c5), s5 = Math.sin(th5);
+        let th4, th6;
+        if (Math.abs(s5) > 1e-9) {
+          th4 = Math.atan2(M[1][0]/s5, -M[2][0]/s5);
+          th6 = Math.atan2(M[0][1]/s5,  M[0][2]/s5);
+        } else {                                     // Singularität: A4+A6 gekoppelt, A4 = 0
+          th4 = 0;
+          th6 = Math.atan2(-M[1][2], M[1][1]) * (c5 > 0 ? 1 : -1);
+        }
+        out.push([th1, th2, th3, th4, th5, th6].map((v, i) => v*R2D*S[i]));
+      }
+    }
+  }
+  return out;
+}
+
+// Nächstgelegene gültige Lösung zu prevQ (inkl. ±360°-Varianten); null wenn nicht analytisch lösbar
+function solveIKAnalytic(tx, ty, tz, ta, tb, tc, prevQ) {
+  if (!ikAnalyticSupported()) return null;
+  prevQ = prevQ || jointAngles;
+  let best = null, bestCost = Infinity;
+  for (const sol of ikAnalyticAll(tx, ty, tz, ta, tb, tc)) {
+    const q = [];
+    let inLim = true;
+    for (let i = 0; i < 6; i++) {
+      const lo = JOINTS_DEF[i].min, hi = JOINTS_DEF[i].max;
+      let v = sol[i] + 360*Math.round((prevQ[i] - sol[i]) / 360);   // nächstgelegene 360°-Kopie
+      if (v < lo || v > hi) {                                        // sonst nächste Kopie in den Grenzen
+        let alt = null;
+        for (let k = -2; k <= 2; k++) { const w = sol[i] + 360*k; if (w >= lo && w <= hi && (alt === null || Math.abs(w - prevQ[i]) < Math.abs(alt - prevQ[i]))) alt = w; }
+        if (alt === null) inLim = false; else v = alt;
+      }
+      q.push(v);
+    }
+    let cost = 0;
+    for (let i = 0; i < 6; i++) cost += (q[i] - prevQ[i])**2;
+    if (!inLim) cost += 1e9;
+    if (cost < bestCost) { bestCost = cost; best = {q, inLim}; }
+  }
+  if (!best) return null;
+  // Verifikation per FK
+  const fk = fkTCP_full(best.q);
+  const eP = Math.hypot(fk.pos[0]-tx, fk.pos[1]-ty, fk.pos[2]-tz);
+  const eO = Math.hypot(...logOriErr(rotZYX(ta, tb, tc), fk.rot));
+  if (!(eP < 0.01 && eO < 0.01)) return null;
+  return { angles: best.q, score: eP + eO, ok: best.inLim };
+}
+
+// Analytisch, sonst numerisch (gleiche Rückgabe {angles, score, ok})
+function ikFastA(x,y,z,a,b,c,init)    { return solveIKAnalytic(x,y,z,a,b,c,init) || solveIKFast(x,y,z,a,b,c,init); }
+function ikRobustA(x,y,z,a,b,c,init)  { return solveIKAnalytic(x,y,z,a,b,c,init) || solveIK(x,y,z,a,b,c,init); }
+function ikPreciseA(x,y,z,a,b,c,init) { return solveIKAnalytic(x,y,z,a,b,c,init) || solveIKPrecise(x,y,z,a,b,c,init); }
+
 // ── IK-Wrapper (öffentliche API bleibt identisch) ───────────────────────────
 
 function solveIK(tx, ty, tz, ta, tb, tc, initAngles) {
@@ -1253,7 +1355,7 @@ function computeIKTableProgressive(positions, done) {
     for (; i < end; i++) {
       var p = positions[i];
       _applyToolToTCPDEF(p.toolN); // aktives Tool dieses Punkts
-      var res = solveIKFast(p.X, p.Y, p.Z, p.A, p.B, p.C, prevQ);
+      var res = ikFastA(p.X, p.Y, p.Z, p.A, p.B, p.C, prevQ);
       var angles = (res.ok ? res.angles : prevQ).map(function(v, j){ return prevQ[j] + shortestAngleDiff(prevQ[j], v); });
       ikTable.push({ angles: angles, score: res.score, ok: res.ok });
       prevQ = angles.slice();
@@ -1579,8 +1681,11 @@ function buildTrajectory(positions, ikTab) {
   // IK with warm-start from previous angles
   // Used for LIN/SLIN/CIRC to guarantee straight Cartesian path
   function ikWarm(pos, prevAngles) {
-    const res = solveIK(pos.X, pos.Y, pos.Z, pos.A, pos.B, pos.C, prevAngles);
-    return res.ok ? res.angles : prevAngles;
+    const res = ikRobustA(pos.X, pos.Y, pos.Z, pos.A, pos.B, pos.C, prevAngles);
+    if (!res.ok) return prevAngles;
+    // Sprungsperre wie bei LIN: keine Achse springt zwischen zwei Bahnpunkten um mehr als 30°
+    const maxDelta = res.angles.reduce((m, v, j) => Math.max(m, Math.abs(v - prevAngles[j])), 0);
+    return maxDelta < 30 ? res.angles : prevAngles;
   }
 
   function pushSample(pos, angles, segIdx) {
@@ -1670,7 +1775,7 @@ function buildTrajectory(positions, ikTab) {
         if (dist < 20) {
           warmAng = lerpAngles(angPrev, angCurrLin, f);
         } else {
-          const res = solveIK(pos.X, pos.Y, pos.Z, pos.A, pos.B, pos.C, warmAng);
+          const res = ikRobustA(pos.X, pos.Y, pos.Z, pos.A, pos.B, pos.C, warmAng);
           if (res.ok) {
             const resN = res.angles.map(function(v, j) {
               return warmAng[j] + shortestAngleDiff(warmAng[j], v);
@@ -1705,17 +1810,33 @@ function buildTrajectory(positions, ikTab) {
 
   trajMax = Math.max(0, trajectory.length - 1);
 
-  // Abgefahrene Bahn: einmal aus allen Trajektorie-Samples bauen, beim Abspielen nur DrawRange verlängern
-  if (visitedLine) { pathGrp.remove(visitedLine); visitedLine.geometry.dispose(); visitedLine.material.dispose(); visitedLine = null; }
+  // Abgefahrene Bahn: einmal bauen, beim Abspielen nur DrawRange verlängern.
+  // Gerade Abschnitte nur mit Endpunkt (Kreis/Spline mit allen Stützpunkten) -> weniger Eckpunkte;
+  // das Stück bis zur aktuellen Position zeichnet eine kurze Kopflinie.
+  [visitedLine, visitedHead].forEach(o => { if (o) { pathGrp.remove(o); o.geometry.dispose(); o.material.dispose(); } });
+  visitedLine = visitedHead = null;
   if (trajectory.length > 1) {
-    const arr = new Float32Array(trajectory.length * 3);
-    trajectory.forEach((s, i) => { arr[i*3] = s.pos.X; arr[i*3+1] = s.pos.Y; arr[i*3+2] = s.pos.Z; });
+    const keep = [];
+    _visitedVtx = new Int32Array(trajectory.length);
+    for (let i = 0; i < trajectory.length; i++) {
+      const s = trajectory[i], nx = trajectory[i+1], ty = (positions[s.segIdx] || {}).type;
+      if (i === 0 || !nx || nx.segIdx !== s.segIdx || ty === 'CIRC' || ty === 'SLIN') keep.push(i);
+      _visitedVtx[i] = keep.length;
+    }
+    _visitedKeep = keep;
+    const arr = new Float32Array(keep.length * 3);
+    keep.forEach((k, i) => { const p = trajectory[k].pos; arr[i*3] = p.X; arr[i*3+1] = p.Y; arr[i*3+2] = p.Z; });
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
     geo.setDrawRange(0, 0);
-    visitedLine = new THREE.Line(geo, new THREE.LineBasicMaterial({color:PATH_COL, linewidth:pathLineWidth}));
+    const mat = new THREE.LineBasicMaterial({color:PATH_COL, linewidth:pathLineWidth});
+    visitedLine = new THREE.Line(geo, mat);
     visitedLine.frustumCulled = false;
-    pathGrp.add(visitedLine);
+    const hg = new THREE.BufferGeometry();
+    hg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+    visitedHead = new THREE.Line(hg, mat.clone());
+    visitedHead.frustumCulled = false; visitedHead.visible = false;
+    pathGrp.add(visitedLine, visitedHead);
   }
 }
 
@@ -1752,10 +1873,17 @@ function updateMarkerPose(ipos){markerGrp.position.set(ipos.X,ipos.Y,ipos.Z);mar
 
 // Visited path
 let visitedLine=null;
+let visitedHead=null, _visitedVtx=null, _visitedKeep=null;
 function updateVisitedPath(t){
   if(!visitedLine)return;
   const cutIdx=(trajectory.length&&t>0)?Math.floor(simTToTrajT(t)*trajMax):0;
-  visitedLine.geometry.setDrawRange(0, cutIdx>=1 ? cutIdx+1 : 0);
+  if(cutIdx<1){visitedLine.geometry.setDrawRange(0,0);visitedHead.visible=false;return;}
+  const n=_visitedVtx[cutIdx];
+  visitedLine.geometry.setDrawRange(0, n>=2?n:0);
+  // Kopflinie vom letzten gespeicherten Eckpunkt bis zur aktuellen Bahnposition
+  const a=trajectory[_visitedKeep[n-1]].pos, b=trajectory[cutIdx].pos, h=visitedHead.geometry.attributes.position;
+  h.setXYZ(0,a.X,a.Y,a.Z); h.setXYZ(1,b.X,b.Y,b.Z); h.needsUpdate=true;
+  visitedHead.visible=true;
 }
 function setStatus(cls,txt){const el=document.getElementById('sim-status');el.className='sstatus '+cls;el.textContent=txt;}
 function applySimT(t){
@@ -1950,7 +2078,7 @@ function _disposeGroup(grp){
 
 function buildScene(positions){ requestRender();
   _disposeGroup(posGrp);_disposeGroup(pathGrp);
-  visitedLine=null;markerGrp.visible=false;
+  visitedLine=visitedHead=null;markerGrp.visible=false;
   if(!positions.length)return;
   const N=positions.length, arr=new Float32Array(N*3);
   positions.forEach((p,i)=>{arr[i*3]=p.X;arr[i*3+1]=p.Y;arr[i*3+2]=p.Z;});
@@ -2037,10 +2165,9 @@ function parseAndLoad(){
 }
 document.getElementById('parse-btn').addEventListener('click',function(){
   // Scan-Daten invalidieren — MAP erzeugen muss danach neu geklickt werden
-  _aPlotReach = null; _aPlotReachMid = null; _aPlotReachAngles = null; _aPlotReachSing = null;
+  _aPlotReach = null; _aPlotReachMid = null; _aPlotReachSing = null;
   parseAndLoad();
-  var info = document.getElementById('aplot-info');
-  if (info) info.textContent = '— MAP erzeugen klicken für Reachability-Scan';
+  aPlotMsg('MAP erzeugen klicken für Reachability-Scan');
 });
 
 // ═══════════════════════════════════════════════════
@@ -2106,8 +2233,8 @@ var _aPlotEdits = {};   // {idx: newA} — geänderte A-Werte
 var _aPlotDragging = false;
 var _aPlotReach       = null;  // [{ok:[bool,…]}] pro Wegpunkt
 var _aPlotReachMid    = null;  // [{ok:[bool,…]}] pro Mittelpunkt
-var _aPlotReachAngles = null;  // [[angles|null,…]] IK-Lösung pro Wegpunkt × A-Step
-var _aPlotReachSing   = null;  // [[types[],…]] Singularitätstypen pro Wegpunkt × A-Step
+var _aPlotReachSing   = null;  // Uint8Array pro Wegpunkt × A-Step: Bitmaske der Singularitätstypen (SING_BIT)
+const SING_BIT = { wrist:1, shoulder:2, elbow:4 };
 var _aPlotReachScanId = 0;
 var _aPlotDragIdx  = -1;
 var _aPlotML = 56, _aPlotMT = 14;
@@ -2247,7 +2374,7 @@ function _aPlotDrawSingMarkers(ctx, ML, MT, CW, CH, pos, total) {
 
   // Reachability-Scan: singuläre erreichbare A-Werte
   if (_aPlotReach && _aPlotReach.length === pos.length &&
-      typeof _aPlotReachAngles !== 'undefined' && _aPlotReachAngles) {
+      _aPlotReachSing) {
     var ASTEP = 6, NSTEPS = Math.round(720 / ASTEP);
     for (let ri = 0; ri < pos.length; ri++) {
       var xMid = ML + (_aPlotDists[ri] / total) * CW;
@@ -2255,10 +2382,9 @@ function _aPlotDrawSingMarkers(ctx, ML, MT, CW, CH, pos, total) {
       var xR = ri===pos.length-1 ? ML+CW : (xMid + ML+(_aPlotDists[ri+1]/total)*CW)/2;
       for (let si = 0; si < NSTEPS; si++) {
         if (!_aPlotReach[ri][si]) continue;
-        var ang = _aPlotReachAngles[ri] && _aPlotReachAngles[ri][si];
-        if (!ang) continue;
-        var stypes = classifySingTypes(ang);
-        if (!stypes.length) continue;
+        var mask = _aPlotReachSing[ri][si];
+        if (!mask) continue;
+        var stypes = ['wrist','shoulder','elbow'].filter(function(k){ return mask & SING_BIT[k]; });
         var yp = MT + (1 - (-360 + si*ASTEP - AMIN) / ARNG) * CH;
         stypes.forEach(function(t) {
           legendTypes[t] = true;
@@ -2368,6 +2494,9 @@ function aPlotDraw() {
   _aPlotDrawCursor(ctx, ML, MT, CW, CH, pos, total);
 }
 
+// Statusmeldung im A-Plot-Kopf (getrennt von der Cursor-Anzeige)
+function aPlotMsg(txt) { document.getElementById('aplot-msg').textContent = txt; }
+
 // Zwischenspeicher des A-Plots verwerfen und neu zeichnen
 var _aPlotCache = null, _aPlotCacheVer = -1, _aPlotVersion = 0;
 function aPlotInvalidate() { _aPlotVersion++; aPlotDraw(); }
@@ -2439,25 +2568,26 @@ function aPlotLivePreview(idx, newA) {
     }
   }
   // Hochpräzisions-IK: nur A ändert sich, XYZ BC exakt aus Programm
-  var res = solveIKPrecise(p.X, p.Y, p.Z, newA, p.B, p.C, warmQ);
+  var res = ikPreciseA(p.X, p.Y, p.Z, newA, p.B, p.C, warmQ);
   if (res && res.ok) applyAngles(res.angles);
 }
 
 // Reachability-Scan: Wegpunkte + Mittelpunkte, 6°-Schritte
 function aPlotStartScan() {
+  aPlotMsg('');
   // Scan-Daten zurücksetzen und neu starten
   _aPlotReach = null; _aPlotReachMid = null;
-  _aPlotReachAngles = null; _aPlotReachSing = null;
+  _aPlotReachSing = null;
   aPlotScanReachability();
 }
 
 function aPlotScanReachability() {
   var pos = (parsedData && parsedData.positions) ? parsedData.positions : [];
   if (!pos.length) { _aPlotReach = null; _aPlotReachMid = null; return; }
-  _aPlotReach = null; _aPlotReachMid = null; _aPlotReachAngles = null;
+  _aPlotReach = null; _aPlotReachMid = null; _aPlotReachSing = null;
   var ASTEP = 6, NSTEPS = Math.round(720 / ASTEP);
   var scanId = ++_aPlotReachScanId;
-  var wpResult  = [], midResult = [], wpAngles = [], wpSing = [];
+  var wpResult  = [], midResult = [], wpSing = [];
 
   // Fortschrittsanzeige einblenden
   var overlay = document.getElementById('aplot-scan-overlay');
@@ -2489,7 +2619,6 @@ function aPlotScanReachability() {
     if (si >= scanList.length) {
       _aPlotReach       = wpResult;
       _aPlotReachMid    = midResult;
-      _aPlotReachAngles = wpAngles;
       _aPlotReachSing   = wpSing;
       if (overlay) overlay.style.display = 'none';
       aPlotInvalidate();
@@ -2501,28 +2630,27 @@ function aPlotScanReachability() {
     if (pctEl) pctEl.textContent = pct + '%';
     if (msgEl) msgEl.textContent = 'Scan ' + (si+1) + ' / ' + totalSteps + ' Positionen…';
 
+    // Mehrere Positionen pro Durchlauf (~15 ms), dann dem Browser Zeit für Anzeige/Eingaben lassen
+    var tEnd = performance.now() + 15;
+    do {
     var item = scanList[si];
     var p = item.p;
     var initQ  = jointAngles.slice();
-    var reach  = new Array(NSTEPS);
-    var angles = (item.type === 'wp') ? new Array(NSTEPS) : null;
-    var sing   = (item.type === 'wp') ? new Array(NSTEPS) : null;
+    var reach  = new Uint8Array(NSTEPS);
+    var sing   = (item.type === 'wp') ? new Uint8Array(NSTEPS) : null;
     for (let s = 0; s < NSTEPS; s++) {
       var aTest = -360 + s * ASTEP;
-      var res = solveIKPrecise(p.X, p.Y, p.Z, aTest, p.B, p.C, initQ);
-      reach[s] = !!(res && res.ok);
+      var res = ikPreciseA(p.X, p.Y, p.Z, aTest, p.B, p.C, initQ);
+      reach[s] = (res && res.ok) ? 1 : 0;
       if (reach[s]) {
         initQ = res.angles;
-        if (angles) angles[s] = res.angles.slice();
-        if (sing)   sing[s]   = classifySingTypes(res.angles);
-      } else {
-        if (angles) angles[s] = null;
-        if (sing)   sing[s]   = [];
+        if (sing) sing[s] = classifySingTypes(res.angles).reduce(function(m, k){ return m | SING_BIT[k]; }, 0);
       }
     }
-    if (item.type === 'wp') { wpResult.push(reach); wpAngles.push(angles); wpSing.push(sing); }
+    if (item.type === 'wp') { wpResult.push(reach); wpSing.push(sing); }
     else                      midResult.push(reach);
     si++;
+    } while (si < scanList.length && performance.now() < tEnd);
     setTimeout(scanNext, 0);
   }
   setTimeout(scanNext, 0);
@@ -2533,7 +2661,7 @@ function aPlotScanReachability() {
 // Mittelpunkte sind OPTIONAL: Bypass kostet 0 wenn direkte Interpolation erreichbar,
 // sonst wird ein Hilfspunkt mit C_DIS eingefügt.
 function aPlotAutoSolve() {
-  var infoEl = document.getElementById('aplot-info');
+  var infoEl = document.getElementById('aplot-msg');
   if (!_aPlotReach || !_aPlotReachMid) {
     if (infoEl) infoEl.textContent = 'Scan läuft noch — bitte warten…'; return;
   }
@@ -2574,8 +2702,7 @@ function aPlotAutoSolve() {
   // Ist ein WP-Schritt singulär? → komplett sperren
   function isSingStep(wpIdx, stepIdx) {
     if (!_aPlotReachSing || !_aPlotReachSing[wpIdx]) return false;
-    var s = _aPlotReachSing[wpIdx][stepIdx];
-    return s && s.length > 0;
+    return _aPlotReachSing[wpIdx][stepIdx] > 0;
   }
 
   // Pufferkosten: Abstand zu nicht-erreichbaren Nachbarn
@@ -2740,7 +2867,7 @@ function aPlotApply() {
   _aPlotEdits = {};
   document.getElementById('aplot-edit-hint').style.display = 'none';
   parseAndLoad();
-  document.getElementById('aplot-info').textContent = '✓ Übernommen';
+  aPlotMsg('✓ Übernommen');
 }
 
 // Drag-Handler fuer aplot-panel
