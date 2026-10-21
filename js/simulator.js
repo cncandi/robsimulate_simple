@@ -1990,6 +1990,15 @@ function pauseSim(){sim.playing=false;sim.stepTarget=null;document.getElementByI
 function stopSim(goTo){pauseSim();if(goTo!==undefined)applySimT(goTo);}
 let lastTs=null;
 // Simulationsgeschwindigkeit für aktuellen Satz berechnen
+// Mittlere Satzlänge (mm) des Programms, einmal je Positionsliste berechnet
+let _meanSegCache = { pos: null, v: 1 };
+function _meanSegLen(pos) {
+  if (_meanSegCache.pos === pos) return _meanSegCache.v;
+  let sum = 0;
+  for (let i = 1; i < pos.length; i++) sum += Math.sqrt((pos[i].X-pos[i-1].X)**2 + (pos[i].Y-pos[i-1].Y)**2 + (pos[i].Z-pos[i-1].Z)**2);
+  _meanSegCache = { pos: pos, v: pos.length > 1 ? Math.max(0.1, sum / (pos.length - 1)) : 1 };
+  return _meanSegCache.v;
+}
 function _simCalcSpeed(pos, curPosIdx, nextPosIdx) {
   // VEL.CP gilt für den Zielpunkt (nextPosIdx), nicht den Ausgangspunkt
   const curVelCP = (pos[nextPosIdx] && pos[nextPosIdx].velCP) ? pos[nextPosIdx].velCP : 0.167;
@@ -2000,13 +2009,14 @@ function _simCalcSpeed(pos, curPosIdx, nextPosIdx) {
   // Anzeige IMMER die programmierte TCP-Geschwindigkeit des aktuellen Satzes (passt zum Programm),
   // unabhaengig vom Abspieltempo (Slider).
   const dispMmMin = Math.round(velMmS * 60);
+  // Zeit je Satz proportional zur Streckenlänge (kurze Sätze, z. B. 1 mm Lagenwechsel, ohne Stillstand).
+  // Mindestlänge 0,1 mm, damit reine Umorientierungen nicht in null Zeit ablaufen.
+  const eff = Math.max(segDist, 0.1);
   if (!_realtimeMode) {
-    // Slider steuert nur, wie schnell abgespielt wird – nicht den angezeigten Wert
-    return { speed: simSpeed(), velCP: curVelCP, displayMmMin: dispMmMin };
+    // Slider: Tempo in Sätzen/s bezogen auf die mittlere Satzlänge → gleiche Gesamtdauer wie zuvor
+    return { speed: simSpeed() * _meanSegLen(pos) / eff, velCP: curVelCP, displayMmMin: dispMmMin };
   }
-  const N = pos.length;
-  const speed = Math.max(0.01, segDist > 1 ? velMmS/segDist : (N > 1 ? velMmS/100 : simSpeed()));
-  return { speed, velCP: curVelCP, displayMmMin: dispMmMin };
+  return { speed: velMmS / eff, velCP: curVelCP, displayMmMin: dispMmMin };
 }
 
 // Simulationszeit um dt vorrücken; rendert selbst und gibt false zurück wenn frame() nicht weiterrendern soll
