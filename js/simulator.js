@@ -1022,6 +1022,7 @@ function openLibPickerModal() {
   document.getElementById('libPickerSearch').value = '';
   document.getElementById('libPickerList').innerHTML = '<div class="lib-msg">Lade…</div>';
   document.getElementById('libPickerModal').style.display = 'flex';
+  document.querySelector('#libPickerModal .lib-default').classList.toggle('current', _currentRobotName === 'Standardmodell');
   if (_libRobots.length) { renderLibPickerList(''); return; }
   fetch('https://cnc-technik.de/robsimul/roblib/api.php?action=list')
     .then(function(r){ return r.json(); })
@@ -1041,7 +1042,7 @@ function renderLibPickerList(q) {
   var el = document.getElementById('libPickerList');
   var items = q ? _libRobots.filter(function(r){ return r.name.toLowerCase().includes(q.toLowerCase()); }) : _libRobots;
   if (!items.length) { el.innerHTML='<div class="lib-msg">Keine Einträge.</div>'; return; }
-  el.innerHTML = items.map(function(r,i){return '<div class="lib-item">'
+  el.innerHTML = items.map(function(r,i){return '<div class="lib-item'+(r.name===_currentRobotName?' current':'')+'">'
     +'<div style="flex:1;min-width:0"><div class="name">'+(r.name||'')+'</div>'
     +'<div class="meta">'+(r.marke||'')+' '+(r.modell||'')+'</div></div>'
     +'<button class="btn primary" data-lib-pick="'+i+'">Laden</button>'
@@ -1056,6 +1057,29 @@ document.getElementById('libPickerSearch').addEventListener('input', function(){
 document.getElementById('libPickerModal').addEventListener('click', function(e){
   if (e.target === this) closeLibPickerModal();
 });
+
+// ── Standardmodell (Default) und zuletzt gewählter Roboter (lokal im Browser gespeichert) ──
+const _ROBOT_KEY = 'robsimSimple.robot';
+const _DEFAULT_ROBOT = { joints: JSON.parse(JSON.stringify(JOINTS_DEF)), tcpList: JSON.parse(JSON.stringify(tcpList)),
+  stlRef: stlRefAngles.slice(), q: jointAngles.slice() };
+let _currentRobotName = 'Standardmodell';
+function _saveRobotChoice(val) { try { localStorage.setItem(_ROBOT_KEY, JSON.stringify(val)); } catch(e) {} }
+function resetDefaultRobot() {
+  JOINTS_DEF.length = _DEFAULT_ROBOT.joints.length;
+  _DEFAULT_ROBOT.joints.forEach(function(j, i) { JOINTS_DEF[i] = JSON.parse(JSON.stringify(j)); });
+  stlRefAngles = _DEFAULT_ROBOT.stlRef.slice(); jointAngles = _DEFAULT_ROBOT.q.slice();
+  for (let i = 0; i < axisSTLMeshes.length; i++) { _removeMesh(axisSTLMeshes[i]); axisSTLMeshes[i] = null; }
+  if (window._axisExtraMeshes) { Object.values(window._axisExtraMeshes).forEach(function(l) { l.forEach(_removeMesh); }); window._axisExtraMeshes = {}; }
+  _removeMesh(pedestalMesh); pedestalMesh = null; _removeMesh(toolMesh); toolMesh = null;
+  tcpList = JSON.parse(JSON.stringify(_DEFAULT_ROBOT.tcpList));
+  _applyToolToTCPDEF(1);
+  buildPivotChain(); buildRobotModel(jointAngles);
+  _currentRobotName = 'Standardmodell';
+  document.getElementById('simple-robot-name').textContent = 'Standardmodell';
+  _saveRobotChoice({ name: 'default' });
+  setStatus('paused', 'Standardmodell');
+  if (parsedData.positions.length) parseAndLoad();
+}
 
 async function loadLibRobot(robot) {
   var lbl = document.getElementById('simple-robot-name');
@@ -1084,6 +1108,8 @@ async function loadLibRobot(robot) {
     await Promise.all(proms);
     applyKinematicData(data, stlBufs);
     lbl.textContent = robot.name;
+    _currentRobotName = robot.name;
+    _saveRobotChoice({ name: robot.name, zip_url: robot.zip_url });
     setStatus('paused','Geladen: '+robot.name);
     if (parsedData.positions.length) parseAndLoad();   // IK mit neuer Kinematik
   } catch(e) {
@@ -3151,4 +3177,8 @@ parseAndLoad();
 window.addEventListener('load', function() {
   resize();
   setView('iso');
+  try {
+    var saved = JSON.parse(localStorage.getItem(_ROBOT_KEY) || 'null');
+    if (saved && saved.zip_url) loadLibRobot(saved);
+  } catch(e) {}
 });

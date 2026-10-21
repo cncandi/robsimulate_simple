@@ -210,3 +210,5 @@ input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;bac
 #parse-btn.attn{box-shadow:0 0 0 2px #ff9b3d inset}
 .info-line.warn.flash{animation:warnflash .6s ease 2}
 @keyframes warnflash{50%{background:#5a3412}}
+.lib-item.lib-default{border-style:dashed}
+.lib-item.current .name::after{content:'  · aktiv';color:var(--teal);font-weight:400}

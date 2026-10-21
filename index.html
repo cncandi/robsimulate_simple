@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261021z">
+<link rel="stylesheet" href="./css/simulator.css?v=20261022a">
 </head>
 <body>
 
@@ -215,6 +215,10 @@
 <div id="libPickerModal">
   <div class="modal">
     <div class="sec-title">Roboter wählen <button class="xbtn" onclick="closeLibPickerModal()" title="Schließen">✕</button></div>
+    <div class="lib-item lib-default">
+      <div style="flex:1;min-width:0"><div class="name">Standardmodell</div><div class="meta">nur Skelett, ohne Achsmodelle</div></div>
+      <button class="btn" onclick="resetDefaultRobot();closeLibPickerModal()">Default setzen</button>
+    </div>
     <input id="libPickerSearch" type="text" placeholder="Suchen…">
     <div id="libPickerList"></div>
   </div>
@@ -227,7 +231,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261021z"></script>
-<script src="./js/simulator.js?v=20261021z"></script>
+<script src="./js/dp-solver.js?v=20261022a"></script>
+<script src="./js/simulator.js?v=20261022a"></script>
 </body>
 </html>
