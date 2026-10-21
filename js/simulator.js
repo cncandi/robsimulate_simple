@@ -789,6 +789,26 @@ function applyKinematicData(data, stlBuffers) {
   buildRobotModel(jointAngles);
   setStatus('paused', 'Kinematik geladen');
 }
+// Rechtes Fenster (Simulation + BASE) ein/ausblenden; Abschnitte einklappen. Zustand im Browser gespeichert.
+const _UI_KEY='robsimSimple.ui';
+function _uiState(){ try{ return JSON.parse(localStorage.getItem(_UI_KEY)||'{}'); }catch(e){ return {}; } }
+function _uiSave(k,v){ try{ const s=_uiState(); s[k]=v; localStorage.setItem(_UI_KEY,JSON.stringify(s)); }catch(e){} }
+function toggleRightPanel(force){
+  const sp=document.querySelector('.sim-panel'), btn=document.getElementById('sp-toggle-btn');
+  const close = force!==undefined ? force : !sp.classList.contains('closed');
+  sp.classList.toggle('closed',close); if(btn) btn.textContent = close ? '◀' : '▶';
+  _uiSave('rightClosed',close);
+  window.dispatchEvent(new Event('resize'));
+}
+function toggleSection(name, force){
+  const body=document.getElementById('sec-'+name); if(!body)return;
+  const head=body.previousElementSibling;
+  const col = force!==undefined ? force : !body.classList.contains('collapsed');
+  body.classList.toggle('collapsed',col); if(head) head.classList.toggle('collapsed',col);
+  _uiSave('col_'+name,col);
+}
+(function(){ const s=_uiState(); if(s.rightClosed) toggleRightPanel(true); if(s.col_sim) toggleSection('sim',true); if(s.col_base) toggleSection('base',true); })();
+
 function toggleLeftPanel() {
   const ep = document.querySelector('.ep');
   const btn = document.getElementById('ep-toggle-btn');

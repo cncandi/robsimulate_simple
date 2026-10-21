@@ -212,3 +212,13 @@ input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;bac
 @keyframes warnflash{50%{background:#5a3412}}
 .lib-item.lib-default{border-style:dashed}
 .lib-item.current .name::after{content:'  · aktiv';color:var(--teal);font-weight:400}
+
+/* rechtes Fenster ein/ausblenden, Abschnitte einklappen */
+#sp-toggle-btn{width:14px;flex-shrink:0;background:var(--bg-rail);border:none;border-left:1px solid var(--bdr);color:var(--txt3);font-size:10px;cursor:pointer}
+#sp-toggle-btn:hover{color:var(--blue)}
+.sim-panel.closed{display:none}
+.sec-title.fold{cursor:pointer;user-select:none}
+.sec-title.fold .chev{font-style:normal;display:inline-block;width:14px;transition:transform .15s}
+.sec-title.fold.collapsed .chev{transform:rotate(-90deg)}
+.sec-body{display:flex;flex-direction:column;gap:10px}
+.sec-body.collapsed{display:none}
