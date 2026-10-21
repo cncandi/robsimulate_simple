@@ -666,6 +666,7 @@ function applyKinematicData(data, stlBuffers) {
   }
   if (data.tcpList && data.tcpList.length) tcpList = data.tcpList;
   if (data.baseList && data.baseList.length) baseList = data.baseList;
+  baseNavTo(0);
   if (data.tcp) {
     var t = data.tcp;
     tcpList = [{ x:t.x||0, y:t.y||0, z:t.z||0, a:t.a||0, b:t.b||0, c:t.c||0, name:'TCP 1' }];
@@ -705,8 +706,12 @@ function ensureBasesForProgram() {
   var maxN = 0;
   parsedData.positions.forEach(function(p){ if (p.baseN && p.baseN > maxN) maxN = p.baseN; });
   parsedData.steps.forEach(function(s){ if (s.type==='base' && s.n > maxN) maxN = s.n; });
-  while (baseList.length < maxN)
+  var changed = false;
+  while (baseList.length < maxN) {
     baseList.push({ x:0, y:0, z:0, a:0, b:0, c:0, name: 'BASE ' + (baseList.length+1) });
+    changed = true;
+  }
+  if (changed) renderBaseNav();
 }
 
 // TCP-Eintrag fuer eine Tool-Nummer (Fallback: erster Eintrag)
@@ -749,6 +754,146 @@ function bakeBaseOffset() {
     } catch(e) {}
   });
 }
+
+// ── BASE bearbeiten (wie RobSimul) ───────────────────────────────
+// Eingabe verschiebt Bahn und Zielpunkte sofort; die IK wird beim naechsten Parsen (F9) neu berechnet.
+var baseNavIdx = 0;
+const baseFrameGroups = [];   // ein Koordinatensystem pro BASE-Eintrag
+
+function makeBaseFrameGroup(name) {
+  var grp = new THREE.Group();
+  var sz = 150;
+  [[1,0,0,0xff3333],[0,1,0,0x33ff33],[0,0,1,0x3388ff]].forEach(function(d) {
+    grp.add(new THREE.ArrowHelper(new THREE.Vector3(d[0],d[1],d[2]), new THREE.Vector3(0,0,0), sz, d[3], sz*.2, sz*.1));
+  });
+  var cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 64;
+  var sprite = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false,transparent:true,alphaTest:0.01,depthWrite:false}));
+  sprite.scale.set(180,44,1);
+  sprite.position.set(20,0,-10);
+  grp.add(sprite);
+  grp.userData.labelSprite = sprite;
+  grp.userData.labelCanvas = cv;
+  updateBaseFrameLabel(grp, name, false);
+  return grp;
+}
+
+function updateBaseFrameLabel(grp, name, isActive) {
+  var cv = grp.userData.labelCanvas;
+  var ctx = cv.getContext('2d');
+  ctx.clearRect(0,0,256,64);
+  ctx.font = 'bold ' + (isActive ? '30' : '26') + 'px monospace';
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.lineWidth = 5;
+  ctx.lineJoin = 'round';
+  ctx.strokeText(name || 'BASE', 6, 44);
+  ctx.fillStyle = isActive ? '#ffffff' : '#93c5fd';
+  ctx.fillText(name || 'BASE', 6, 44);
+  grp.userData.labelSprite.material.map.needsUpdate = true;
+}
+
+function syncBaseFrameGroups() {
+  while (baseFrameGroups.length < baseList.length) {
+    var grp = makeBaseFrameGroup(baseList[baseFrameGroups.length].name);
+    scene.add(grp);
+    baseFrameGroups.push(grp);
+  }
+  while (baseFrameGroups.length > baseList.length) scene.remove(baseFrameGroups.pop());
+  baseList.forEach(function(b, i) {
+    var grp = baseFrameGroups[i], r = Math.PI/180, isActive = (i === baseNavIdx);
+    grp.position.set(b.x||0, b.y||0, b.z||0);
+    grp.rotation.set((b.c||0)*r, (b.b||0)*r, (b.a||0)*r, 'ZYX');
+    if (!b.name) b.name = 'BASE '+(i+1);
+    updateBaseFrameLabel(grp, b.name, isActive);
+    grp.traverse(function(obj) {
+      if (obj.material) { obj.material.opacity = isActive ? 1.0 : 0.35; obj.material.transparent = !isActive; }
+    });
+  });
+  requestRender();
+}
+
+function baseGetInputs() {
+  var v = function(k){ return parseFloat(document.getElementById('base-'+k).value) || 0; };
+  return { x:v('x'), y:v('y'), z:v('z'), a:v('a'), b:v('b'), c:v('c') };
+}
+function baseSetInputs(b) {
+  ['x','y','z','a','b','c'].forEach(function(k) { document.getElementById('base-'+k).value = b && b[k] !== undefined ? b[k] : 0; });
+}
+
+function renderBaseNav() {
+  syncBaseFrameGroups();
+  var n = baseList.length, i = baseNavIdx;
+  var name = (n && baseList[i]) ? baseList[i].name || '' : '';
+  document.getElementById('base-nav-label').textContent = n ? (i+1)+' / '+n+(name?' · '+name:'') : '—';
+  var dis = function(id, d) { document.getElementById(id).disabled = d; };
+  dis('base-nav-first', i<=0||!n);
+  dis('base-nav-prev',  i<=0||!n);
+  dis('base-nav-next',  i>=n-1);
+  dis('base-nav-last',  i>=n-1);
+  dis('base-nav-del',   !n);
+}
+
+function baseNavTo(idx) {
+  if (!baseList.length) return;
+  baseNavIdx = Math.max(0, Math.min(idx, baseList.length - 1));
+  var entry = baseList[baseNavIdx];
+  if (!entry.name) entry.name = 'BASE ' + (baseNavIdx+1);
+  baseSetInputs(entry);
+  document.getElementById('base-name').value = entry.name;
+  renderBaseNav();
+}
+
+function baseAddCurrent() {
+  var b = baseGetInputs();
+  b.name = 'BASE ' + (baseList.length + 1);
+  baseList.push(b);
+  baseNavTo(baseList.length - 1);
+}
+
+function baseDelCurrent() {
+  if (!baseList.length) return;
+  baseList.splice(baseNavIdx, 1);
+  if (baseList.length) baseNavTo(Math.min(baseNavIdx, baseList.length - 1));
+  else { baseNavIdx = 0; renderBaseNav(); }
+  applyBase();
+}
+
+function baseNameChanged(val) {
+  if (!baseList[baseNavIdx]) return;
+  baseList[baseNavIdx].name = val;
+  renderBaseNav();
+}
+
+function updateBaseDef() {
+  var b = baseGetInputs(), e = baseList[baseNavIdx];
+  if (e) { e.x=b.x; e.y=b.y; e.z=b.z; e.a=b.a; e.b=b.b; e.c=b.c; }
+  syncBaseFrameGroups();
+  applyBase();
+}
+
+// BASE-Offset neu anwenden und Bahn/Zielpunkte neu zeichnen (Kamera bleibt, IK erst beim Parsen)
+function applyBase() {
+  if (!parsedData.positions.length) return;
+  bakeBaseOffset();
+  var savedT = orbitTarget.clone(), savedR = orbitState.radius;
+  buildScene(parsedData.positions);
+  orbitTarget.copy(savedT); orbitState.radius = savedR; updateCamera();
+  aPlotDraw();
+}
+
+// Mausrad auf Zahlenfeldern (wie RobSimul): Wert um Schrittweite aendern
+(function() {
+  var hovered = null;
+  document.addEventListener('mouseover', function(e) { if (e.target.type === 'number') hovered = e.target; });
+  document.addEventListener('mouseout',  function(e) { if (e.target.type === 'number') hovered = null; });
+  document.addEventListener('wheel', function(e) {
+    if (!hovered) return;
+    e.preventDefault();
+    var step = parseFloat(hovered.step) || 1;
+    hovered.value = (parseFloat(hovered.value) || 0) + (e.deltaY < 0 ? step : -step);
+    hovered.dispatchEvent(new Event('input', {bubbles:true}));
+  }, {passive:false});
+})();
 
 // ── Roboterauswahl (RobLib) ───────────────────────────────────────
 var _libRobots = [];
@@ -1837,6 +1982,7 @@ document.getElementById('parse-btn').addEventListener('click',function(){
 // INIT
 // ═══════════════════════════════════════════════════
 buildRobotModel([0,-90,90,0,0,0]);
+baseNavTo(0);
 document.getElementById('code-input').value=`$BASE = BASE_DATA[1]
 $TOOL=TOOL_DATA[24]
 $advance=5
