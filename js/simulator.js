@@ -997,7 +997,8 @@ function applyBase() {
   var w = document.getElementById('sim-warn'); if (w) w.style.display = 'none';
   setStatus('paused', 'BASE geändert…');
   clearTimeout(applyBase._t);
-  applyBase._t = setTimeout(function() { if (!_ikPending) parseAndLoad(); }, 700);
+  applyBase._pending = true;
+  applyBase._t = setTimeout(function() { applyBase._pending = false; parseAndLoad(); }, 700);
 }
 
 // Mausrad auf Zahlenfeldern (wie RobSimul): Wert um Schrittweite aendern
@@ -2153,9 +2154,31 @@ function startPlay(dir){
 }
 function togglePlay(dir){
   if(sim.playing&&sim.dir===dir){pauseSim();setStatus('paused','PAUSED');return;}
-  if(_codeEl.value!==_parsedCode||_ikPending){_playAfterParse=dir;if(!_ikPending)parseAndLoad();return;}
+  if(_ikPending){_playAfterParse=dir;return;}
   startPlay(dir);
 }
+// ── Simulation gesperrt, solange das Programm nach einer Änderung nicht neu geparst ist ──
+function _progDirty(){ return _parsedCode!==null && _codeEl.value!==_parsedCode; }
+function _showParseNeeded(){
+  const el=document.getElementById('sim-warn'); if(!el)return;
+  el.textContent='Fehler: Programm wurde geändert – Parsen nach Änderung notwendig (F9 oder PARSE & LOAD).';
+  el.style.display=''; el.onclick=null;
+  el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+}
+function _updateDirtyUI(){
+  const d=_progDirty();
+  document.querySelector('.sim-panel')?.classList.toggle('dirty',d);
+  document.getElementById('parse-btn').classList.toggle('attn',d);
+}
+const _SIM_CTRL='#b-start,#b-end,#b-playfwd,#b-playrev,#b-stepfwd,#b-steprev,#pos-s';
+['click','mousedown','input'].forEach(ev=>document.addEventListener(ev,e=>{
+  if(!_progDirty()||!e.target.closest)return;
+  if(e.target.closest(_SIM_CTRL)||(ev==='mousedown'&&e.target.id==='aplot-canvas')){
+    e.preventDefault(); e.stopImmediatePropagation(); if(ev!=='input')_showParseNeeded();
+    const ps=document.getElementById('pos-s'); if(ps)ps.value=sim.t;
+  }
+},true));
+_codeEl.addEventListener('input',_updateDirtyUI);
 document.getElementById('b-playfwd').onclick=()=>togglePlay(1);
 document.getElementById('b-playrev').onclick=()=>togglePlay(-1);
 document.getElementById('b-stepfwd').onclick=()=>{if(!(parsedData.steps&&parsedData.steps.length))return;pauseSim();applyStep(sim.stepIdx+1);};
@@ -2246,7 +2269,7 @@ _codeEl.addEventListener('scroll',renderGutter);
 // Cursorzeile im Editor → Roboter an diese Programmposition (Klick, Pfeiltasten, Bild auf/ab …)
 let _edLine=-1;
 function _editorCursorToSim(){
-  if(!parsedData||!parsedData.posOfLine||_ikPending)return;
+  if(!parsedData||!parsedData.posOfLine||_ikPending||_progDirty())return;
   const v=_codeEl.value, c=_codeEl.selectionStart;
   let line=0; for(let k=v.indexOf('\n');k>=0&&k<c;k=v.indexOf('\n',k+1)) line++;
   if(line===_edLine)return; _edLine=line;
@@ -2278,6 +2301,7 @@ let _parsedCode=null, _ikPending=false;
 function parseAndLoad(){
   const code=_codeEl.value;
   _parsedCode=code; _ikPending=true;
+  if(typeof _updateDirtyUI==='function')_updateDirtyUI();
   parsedData=parseKRL(code);const N=parsedData.positions.length;
   // Schnellzugriff: Positionsindex -> Programmschritt
   parsedData.stepOfPos=new Int32Array(N).fill(-1);
@@ -2306,6 +2330,7 @@ function parseAndLoad(){
       else setStatus('stopped','STOPPED');
       parseProgressHide();
       _ikJumpCheck();
+      if(_aScanAfterIK){ _aScanAfterIK=false; aPlotStartScan(); }
       aPlotInvalidate();
       if(_playAfterParse){const d=_playAfterParse;_playAfterParse=0;startPlay(d);}
     });
@@ -2726,7 +2751,13 @@ function aPlotInvalidate() {
 // ── MAP erzeugen ─────────────────────────────────────────
 // Scanpunkte gleichmäßig über die Bahnlänge, innerhalb jedes Abschnitts versetzt (Goldener Schnitt),
 // damit periodische Bahnen (z. B. Ecken jeder Lage) nicht immer an derselben Stelle getroffen werden.
+var _aScanAfterIK = false;
 function aPlotStartScan() {
+  // Die Map baut auf den Achsstellungen der Simulation auf: erst nach deren Neuberechnung starten
+  if (_ikPending || applyBase._pending) {
+    _aScanAfterIK = true; aPlotMsg('Achsstellungen werden berechnet – MAP startet danach');
+    return;
+  }
   var pos = _aPos();
   if (!pos.length) { aPlotMsg('Kein Programm geladen'); return; }
   _aPlotCalcDists(pos);

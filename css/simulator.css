@@ -204,3 +204,9 @@ input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;bac
 #code-hl{position:absolute;left:45px;right:0;height:var(--lh,20px);top:-100px;pointer-events:none;z-index:1;
   background:rgba(85,174,244,.16);border-left:2px solid var(--blue)}
 .slider-row .pct{width:44px;flex:none;text-align:right;font-family:var(--mono);font-size:11.5px;color:var(--blue)}
+
+/* Programm geändert, nicht geparst: Simulation gesperrt */
+.sim-panel.dirty .transport,.sim-panel.dirty #pos-s{opacity:.35}
+#parse-btn.attn{box-shadow:0 0 0 2px #ff9b3d inset}
+.info-line.warn.flash{animation:warnflash .6s ease 2}
+@keyframes warnflash{50%{background:#5a3412}}
