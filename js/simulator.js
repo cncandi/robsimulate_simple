@@ -655,12 +655,14 @@ function _buildSkeleton(angles) {
   const pts  = fk.pts;
   const linkR = [28,20,16,12,8,6];
   const jntR  = [40,38,30,24,20,16];
-  for (let i = 0; i < 7; i++) {
+  // Roboter aus der Bibliothek mit Achsmodellen (STL): Skelett ausblenden, nur TCP-Achsen zeigen
+  const hasSTL = axisSTLMeshes.some(Boolean);
+  for (let i = 0; i < 7 && !hasSTL; i++) {
     if (!pts[i] || !pts[i+1]) continue;
     const cyl = buildCylinder(pts[i], pts[i+1], linkR[i] || 5, robotColor);
     if (cyl) robotGrp.add(cyl);
   }
-  for (let i = 1; i <= 6; i++) {
+  for (let i = 1; i <= 6 && !hasSTL; i++) {
     const s = new THREE.Mesh(
       new THREE.SphereGeometry(jntR[i-1] || 10, 12, 8),
       new THREE.MeshPhongMaterial({color:jointColor, shininess:120, specular:0x666666})
