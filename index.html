@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261021i">
+<link rel="stylesheet" href="./css/simulator.css?v=20261021j">
 </head>
 <body>
 
@@ -177,6 +177,9 @@
     <span id="aplot-info">—</span>
     <span id="aplot-msg"></span>
     <span id="aplot-edit-hint">Punkt geändert</span>
+    <select id="aplot-step" class="inp" style="width:104px;flex:none;height:28px;padding:0 4px;font-size:11px" title="Raster für MAP und Auto-Lösung: nur jeder n-te Punkt wird gescannt. Die Auto-Lösung ändert trotzdem alle Punkte.">
+      <option value="auto">Raster Auto</option><option value="1">Raster 1</option><option value="10">Raster 10</option><option value="100">Raster 100</option><option value="1000">Raster 1000</option>
+    </select>
     <button class="btn" onclick="aPlotStartScan()" title="Reachability-Scan starten">MAP erzeugen</button>
     <button class="btn" onclick="aPlotAutoSolve()" title="Automatische A-Winkel-Lösung ohne gelbe Bereiche">Auto-Lösung</button>
     <button class="btn primary" onclick="aPlotApply()" title="Geänderte A-Werte ins KRL übernehmen">Übernehmen</button>
@@ -209,7 +212,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261021i"></script>
-<script src="./js/simulator.js?v=20261021i"></script>
+<script src="./js/dp-solver.js?v=20261021j"></script>
+<script src="./js/simulator.js?v=20261021j"></script>
 </body>
 </html>

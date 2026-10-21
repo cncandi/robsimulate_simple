@@ -8,6 +8,8 @@ Live: https://cnc-technik.de/robsimul/simple/
 - KUKA-KRL-Programm bearbeiten, als .src öffnen/speichern, parsen (F9)
 - Simulation: Play vor/zurück, Einzelschritt, Anfang/Ende, Geschwindigkeit, Echtzeit, Positionsregler
 - A-Plot: A-Winkel-Verlauf, Reachability-Map, Singularitätsmarker, Auto-Lösung, A-Werte per Ziehen ändern und ins KRL übernehmen
+- A-Plot-Raster (Auto/1/10/100/1000): MAP und Auto-Lösung rechnen nur auf jedem n-ten Punkt; die Auto-Lösung ändert trotzdem alle Punkte
+  (A-Änderung entlang der Bahn interpoliert) und prüft jeden Punkt per IK. Nicht erreichbare Punkte werden rot markiert.
 - 3D-Ansicht: Standardansichten Vorne/Hinten/Links/Rechts/Oben/Unten/Isometrisch, Perspektive/Orthogonal,
   Zoom +/−, Einpassen; Maus: Drehen (links), Verschieben (rechts/Mitte), Zoom (Rad)
 - Oberfläche im Stil von P3D-SO (Farben, Toolbar mit Icon über Label, Panels, Statusleiste)

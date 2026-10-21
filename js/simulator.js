@@ -2185,7 +2185,7 @@ function parseAndLoad(){
 }
 document.getElementById('parse-btn').addEventListener('click',function(){
   // Scan-Daten invalidieren — MAP erzeugen muss danach neu geklickt werden
-  _aPlotReach = null; _aPlotReachMid = null; _aPlotReachSing = null;
+  _aPlotReach = null; _aPlotReachMid = null; _aPlotReachSing = null; _aPlotScan = null; _aPlotBad = null;
   parseAndLoad();
   aPlotMsg('MAP erzeugen klicken für Reachability-Scan');
 });
@@ -2249,6 +2249,7 @@ END`;
 // A-WINKEL DIAGRAMM
 // ══════════════════════════════════════════════════════
 var _aPlotDists = [];
+var _aPlotBad = null;   // Uint8Array: 1 = Zwischenpunkt mit neuem A nicht erreichbar (nur Raster > 1)
 var _aPlotEdits = {};   // {idx: newA} — geänderte A-Werte
 var _aPlotDragging = false;
 var _aPlotReach       = null;  // [{ok:[bool,…]}] pro Wegpunkt
@@ -2338,11 +2339,15 @@ function _aPlotDrawReachBands(ctx, ML, MT, CW, CH, pos, total) {
   if (!_aPlotReach || !_aPlotReach.length) return;
   const AMIN = -360, ARNG = 720, ASTEP = 6, NSTEPS = Math.round(720 / ASTEP);
   var reachN = Math.min(_aPlotReach.length, pos.length);
+  var xAt = function(i) { return ML + (_aPlotDists[i] / total) * CW; };
   for (let ri = 0; ri < reachN; ri++) {
     var reach = _aPlotReach[ri]; if (!reach) continue;
-    var xMid = ML + (_aPlotDists[ri] / total) * CW;
-    var xL = ri === 0 ? ML : (ML + (_aPlotDists[ri-1] / total) * CW + xMid) / 2;
-    var xR = ri === pos.length-1 ? ML+CW : (xMid + ML + (_aPlotDists[ri+1] / total) * CW) / 2;
+    // Folgepunkte mit identischem Ergebnis (Raster-Zwischenpunkte) zu einem Band zusammenfassen
+    var re = ri;
+    while (re + 1 < reachN && _aPlotReach[re+1] === reach) re++;
+    var xL = ri === 0 ? ML : (xAt(ri-1) + xAt(ri)) / 2;
+    var xR = re === pos.length-1 ? ML+CW : (xAt(re) + xAt(re+1)) / 2;
+    ri = re;
     ctx.save();
     ctx.beginPath(); ctx.rect(xL, MT, xR - xL, CH); ctx.clip();
     for (let si = 0; si < NSTEPS; si++) {
@@ -2370,8 +2375,8 @@ function _aPlotDrawCurves(ctx, ML, MT, CW, CH, pos, total) {
   // Wegpunkte
   pos.forEach(function(p, i) {
     var a = (_aPlotEdits[i] !== undefined) ? _aPlotEdits[i] : p.A;
-    ctx.fillStyle = (_aPlotEdits[i] !== undefined) ? '#ffee00' : '#7bd8e4';
-    ctx.beginPath(); ctx.arc(xp(i), yp(a), 4, 0, 2*Math.PI); ctx.fill();
+    ctx.fillStyle = (_aPlotBad && _aPlotBad[i]) ? '#f87171' : (_aPlotEdits[i] !== undefined) ? '#ffee00' : '#7bd8e4';
+    ctx.beginPath(); ctx.arc(xp(i), yp(a), (_aPlotBad && _aPlotBad[i]) ? 5 : 4, 0, 2*Math.PI); ctx.fill();
   });
   // Editierte Linie (gelb gestrichelt)
   if (Object.keys(_aPlotEdits).length > 0) {
@@ -2593,8 +2598,29 @@ function aPlotLivePreview(idx, newA) {
 }
 
 // Reachability-Scan: Wegpunkte + Mittelpunkte, 6°-Schritte
+// Rasterergebnis auf alle Punkte übertragen (für Anzeige). Zwischenpunkte vorsichtig:
+// erreichbar nur, wenn beide Rasterpunkte und das Zwischenstück erreichbar sind; singulär, wenn einer singulär ist.
+// Alle Zwischenpunkte eines Abschnitts teilen sich ein Array (wenig Speicher).
+var _aPlotScan = null;
+function _aPlotExpandScan() {
+  var S = _aPlotScan, N = parsedData.positions.length;
+  _aPlotReach = new Array(N); _aPlotReachMid = new Array(Math.max(0, N-1)); _aPlotReachSing = new Array(N);
+  for (let j = 0; j < S.idxs.length; j++) {
+    var a = S.idxs[j];
+    _aPlotReach[a] = S.reach[j]; _aPlotReachSing[a] = S.sing[j];
+    if (j === S.idxs.length - 1) break;
+    var b = S.idxs[j+1];
+    if (b - a === 1) { _aPlotReachMid[a] = S.mid[j]; continue; }
+    var ra = S.reach[j], rb = S.reach[j+1], rm = S.mid[j], sa = S.sing[j], sb = S.sing[j+1];
+    var r = new Uint8Array(ra.length), s = new Uint8Array(ra.length);
+    for (let q = 0; q < ra.length; q++) { r[q] = ra[q] & rb[q] & rm[q]; s[q] = sa[q] | sb[q]; }
+    for (let i = a; i < b; i++) { _aPlotReachMid[i] = r; if (i > a) { _aPlotReach[i] = r; _aPlotReachSing[i] = s; } }
+  }
+}
+
 function aPlotStartScan() {
   aPlotMsg('');
+  _aPlotScan = null; _aPlotBad = null;
   // Scan-Daten zurücksetzen und neu starten
   _aPlotReach = null; _aPlotReachMid = null;
   _aPlotReachSing = null;
@@ -2616,16 +2642,26 @@ function aPlotScanReachability() {
   var msgEl   = document.getElementById('aplot-scan-msg');
   if (overlay) overlay.style.display = 'flex';
 
-  // Scan-Positionen: wp0, mid01, wp1, mid12, …, wp[N-1]
+  // Raster: nur jeder k-te Punkt wird gescannt (Auto: höchstens ~2000 Rasterpunkte)
+  var N = pos.length, sel = document.getElementById('aplot-step').value;
+  var k = sel === 'auto' ? Math.max(1, Math.ceil(N / 2000)) : Math.max(1, parseInt(sel, 10) || 1);
+  var idxs = [];
+  for (let i = 0; i < N; i += k) idxs.push(i);
+  if (idxs[idxs.length-1] !== N-1) idxs.push(N-1);
+
+  // Scan-Positionen: Rasterpunkt, Zwischenstück, Rasterpunkt, …
+  // Zwischenstück: bei direkt benachbarten Punkten der Mittelpunkt der Strecke,
+  // sonst der mittlere echte Bahnpunkt (liegt auch bei gekrümmter Bahn auf der Bahn)
   var scanList = [];
-  for (let i = 0; i < pos.length; i++) {
-    scanList.push({ type:'wp', idx:i, p: pos[i] });
-    if (i < pos.length - 1) {
-      var p0 = pos[i], p1 = pos[i+1];
-      scanList.push({ type:'mid', idx:i, subIdx:0, p:{
+  for (let j = 0; j < idxs.length; j++) {
+    var a = idxs[j];
+    scanList.push({ type:'wp', idx:a, p: pos[a] });
+    if (j < idxs.length - 1) {
+      var b = idxs[j+1], m = Math.floor((a + b) / 2), p0 = pos[a], p1 = pos[b];
+      scanList.push({ type:'mid', idx:a, subIdx:0, p: (b - a === 1) ? {
         X:(p0.X+p1.X)/2, Y:(p0.Y+p1.Y)/2, Z:(p0.Z+p1.Z)/2,
         B:(p0.B+p1.B)/2, C:(p0.C+p1.C)/2
-      }});
+      } : pos[m] });
     }
   }
   var totalSteps = scanList.length;
@@ -2637,10 +2673,10 @@ function aPlotScanReachability() {
       return;
     }
     if (si >= scanList.length) {
-      _aPlotReach       = wpResult;
-      _aPlotReachMid    = midResult;
-      _aPlotReachSing   = wpSing;
+      _aPlotScan = { idxs: idxs, k: k, reach: wpResult, mid: midResult, sing: wpSing };
+      _aPlotExpandScan();
       if (overlay) overlay.style.display = 'none';
+      aPlotMsg(k > 1 ? 'Raster: jeder ' + k + '. Punkt (' + idxs.length + ' von ' + N + ' gescannt)' : '');
       aPlotInvalidate();
       return;
     }
@@ -2687,9 +2723,10 @@ function aPlotAutoSolve() {
   }
   var pos = (parsedData && parsedData.positions) ? parsedData.positions : [];
   if (!pos.length) { if (infoEl) infoEl.textContent = 'Kein Programm geladen.'; return; }
-  if (_aPlotReach.length !== pos.length) {
+  if (_aPlotReach.length !== pos.length || !_aPlotScan) {
     if (infoEl) infoEl.textContent = 'Scan veraltet — bitte neu parsen.'; return;
   }
+  var SC = _aPlotScan;
 
   var ASTEP = 6, NSTEPS = Math.round(720 / ASTEP), INF = 1e9;
   var N = pos.length;
@@ -2697,11 +2734,12 @@ function aPlotAutoSolve() {
   // ── Knotenfolge aufbauen ──────────────────────────────
   // nodes[k] = { type:'wp'|'mid', idx, subIdx, reach[NSTEPS] }
   // NSUB Zwischenpunkte pro Segment (t=1/(NSUB+1) … NSUB/(NSUB+1))
+  // Knoten = Rasterpunkte und Zwischenstücke (bei Raster 1: alle Punkte)
   var nodes = [];
-  for (let i = 0; i < N; i++) {
-    nodes.push({ type:'wp', idx:i, reach:_aPlotReach[i] });
-    if (i < N-1)
-      nodes.push({ type:'mid', idx:i, subIdx:0, reach:(_aPlotReachMid[i] || _aPlotReach[i]) });
+  for (let j = 0; j < SC.idxs.length; j++) {
+    nodes.push({ type:'wp', idx:SC.idxs[j], reach:SC.reach[j], sing:SC.sing[j] });
+    if (j < SC.idxs.length-1)
+      nodes.push({ type:'mid', idx:SC.idxs[j], subIdx:0, reach:SC.mid[j] });
   }
   var M = nodes.length; // 2N-1
 
@@ -2720,9 +2758,8 @@ function aPlotAutoSolve() {
   var BUFFER_WIDTH   = 3;  // 18° Abstand zu gelben Bereichen
 
   // Ist ein WP-Schritt singulär? → komplett sperren
-  function isSingStep(wpIdx, stepIdx) {
-    if (!_aPlotReachSing || !_aPlotReachSing[wpIdx]) return false;
-    return _aPlotReachSing[wpIdx][stepIdx] > 0;
+  function isSingStep(node, stepIdx) {
+    return !!(node.sing && node.sing[stepIdx] > 0);
   }
 
   // Pufferkosten: Abstand zu nicht-erreichbaren Nachbarn
@@ -2740,7 +2777,7 @@ function aPlotAutoSolve() {
   var startA = pos[0].A;
   for (let s = 0; s < NSTEPS; s++) {
     if (!nodes[0].reach[s]) continue;
-    if (isSingStep(0, s)) continue;
+    if (isSingStep(nodes[0], s)) continue;
     dp[0][s].cost = Math.abs((-360 + s*ASTEP) - startA) + bufferCost(nodes[0].reach, s);
   }
 
@@ -2754,7 +2791,7 @@ function aPlotAutoSolve() {
       var midNd = nodes[pkv];
       for (let s = 0; s < NSTEPS; s++) {          // Ziel wp
         if (!nd.reach[s]) continue;
-        if (isSingStep(nd.idx, s)) continue;       // singuläre Schritte sperren
+        if (isSingStep(nd, s)) continue;           // singuläre Schritte sperren
         var aTo = -360 + s*ASTEP;
         var sCost = bufferCost(nd.reach, s);
         // Aus realen Mittelpunkt-Zuständen
@@ -2830,20 +2867,55 @@ function aPlotAutoSolve() {
 
   // ── Ergebnis extrahieren ──────────────────────────────
   _aPlotEdits = {};
+  _aPlotBad = null;
 
+  // Programm-A stetig fortsetzen (Sprünge über ±180° entfernen), damit die Interpolation
+  // zwischen Rasterpunkten nicht über einen 360°-Sprung hinweg rechnet
+  var U = new Float64Array(N);
+  U[0] = pos[0].A;
+  for (let i = 1; i < N; i++) {
+    var d = pos[i].A - pos[i-1].A;
+    U[i] = U[i-1] + d - 360 * Math.round(d / 360);
+  }
+  // Neue A-Werte der Rasterpunkte als Änderung gegenüber dem (stetigen) Programm-A
+  var offs = [];
   for (let k = 0; k < M; k++) {
-    var nd = nodes[k];
-    if (nd.type === 'wp') {
-      var aNew = -360 + path[k] * ASTEP;
-      if (Math.abs(aNew - pos[nd.idx].A) > 0.5) _aPlotEdits[nd.idx] = aNew;
+    if (nodes[k].type === 'wp') offs.push(-360 + path[k] * ASTEP - U[nodes[k].idx]);
+  }
+  // Alle Punkte anpassen: Änderung entlang der Bahn (Bogenlänge) zwischen den Rasterpunkten interpolieren.
+  // So bleibt ein im Programm vorhandener A-Verlauf erhalten und wird nur verschoben.
+  _aPlotCalcDists(pos);
+  for (let j = 0; j < SC.idxs.length; j++) {
+    var a = SC.idxs[j], b = (j < SC.idxs.length-1) ? SC.idxs[j+1] : a + 1;
+    for (let i = a; i < Math.min(b, N); i++) {
+      var off = offs[j];
+      if (i > a && j < offs.length-1) {
+        var span = _aPlotDists[b] - _aPlotDists[a];
+        var f = span > 0 ? (_aPlotDists[i] - _aPlotDists[a]) / span : (i - a) / (b - a);
+        off = offs[j] + (offs[j+1] - offs[j]) * f;
+      }
+      var aI = Math.round((U[i] + off) * 1000) / 1000;
+      if (Math.abs(aI - pos[i].A) > 0.5) _aPlotEdits[i] = aI;
     }
-    // Keine Hilfspunkte einfügen — vermeidet Bahnabweichungen durch C_DIS-Rundung
+  }
+
+  // Bei Raster > 1: jeden geänderten Zwischenpunkt mit seinem neuen A per IK prüfen
+  var bad = 0;
+  if (SC.k > 1) {
+    _aPlotBad = new Uint8Array(N);
+    var q = jointAngles.slice();
+    for (let i = 0; i < N; i++) {
+      if (_aPlotEdits[i] === undefined) continue;
+      var p = pos[i], r = ikPreciseA(p.X, p.Y, p.Z, _aPlotEdits[i], p.B, p.C, q);
+      if (r && r.ok) q = r.angles; else { _aPlotBad[i] = 1; bad++; }
+    }
   }
 
   var hint = document.getElementById('aplot-edit-hint');
   if (hint) hint.style.display = '';
-  if (infoEl) infoEl.textContent =
-    '⚡ Auto-Lösung: Δ' + bestCost.toFixed(0) + '° — Übernehmen zum Anwenden';
+  if (infoEl) infoEl.textContent = bad
+    ? '⚠ ' + bad + ' Punkt(e) nicht erreichbar (rot) — feineres Raster'
+    : '⚡ Auto-Lösung: ' + Object.keys(_aPlotEdits).length + ' Punkte geändert, Δ' + bestCost.toFixed(0) + '° — Übernehmen zum Anwenden';
   aPlotInvalidate();
 }
 
