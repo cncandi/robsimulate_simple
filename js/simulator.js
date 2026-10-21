@@ -391,6 +391,7 @@ function parseKRL(code){
 // THREE.JS SETUP (Z-up scene = KUKA Robot CS)
 // ═══════════════════════════════════════════════════
 const canvas=document.getElementById('c3d');
+const _codeEl=document.getElementById('code-input'), _gutEl=document.getElementById('gutter');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(window.devicePixelRatio);
 const scene=new THREE.Scene();
@@ -574,7 +575,13 @@ function _buildSkeleton(angles) {
 
 function buildRobotModel(angles) {
   if (!axisPivots.length) buildPivotChain();
-  robotGrp.children.filter(ch => !axisPivots.includes(ch)).forEach(ch => robotGrp.remove(ch));
+  robotGrp.children.filter(ch => !axisPivots.includes(ch)).forEach(ch => {
+    robotGrp.remove(ch);
+    // Skelett wird pro Bild neu aufgebaut: eigene Geometrien/Materialien freigeben
+    // (ArrowHelper teilt seine Geometrie in three.js — dort nur Materialien)
+    if (ch.isMesh) { ch.geometry.dispose(); ch.material.dispose(); }
+    else if (ch.line) { ch.line.material.dispose(); ch.cone.material.dispose(); }
+  });
   updatePivotRotations(angles);
   _applySTLMeshPoses(angles);
   _applyToolMeshPose(angles);
@@ -878,7 +885,7 @@ function applyBase() {
   var savedT = orbitTarget.clone(), savedR = orbitState.radius;
   buildScene(parsedData.positions);
   orbitTarget.copy(savedT); orbitState.radius = savedR; updateCamera();
-  aPlotDraw();
+  aPlotInvalidate();
 }
 
 // Mausrad auf Zahlenfeldern (wie RobSimul): Wert um Schrittweite aendern
@@ -1346,7 +1353,7 @@ window.addEventListener('mouseup',()=>{if(drag){drag=null;canvas.classList.remov
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
 canvas.addEventListener('wheel',e=>zoomBy(1+e.deltaY*.001),{passive:true});
 
-document.getElementById('code-input').addEventListener('input',()=>rebuildGutter());
+_codeEl.addEventListener('input',()=>rebuildGutter());
 
 // ═══════════════════════════════════════════════════
 // GELENKWINKEL ANWENDEN — Robotermodell
@@ -1698,15 +1705,17 @@ function buildTrajectory(positions, ikTab) {
 
   trajMax = Math.max(0, trajectory.length - 1);
 
-  // Rebuild path line from actual Cartesian trajectory
-  pathGrp.clear();
-  // Full programmed path from parsedData.positions (always correct)
-  if (parsedData.positions.length > 1) {
-    const progPts = parsedData.positions.map(p => new THREE.Vector3(p.X, p.Y, p.Z));
-    pathGrp.add(new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(progPts),
-      new THREE.LineBasicMaterial({color:PLANNED_COL})
-    ));
+  // Abgefahrene Bahn: einmal aus allen Trajektorie-Samples bauen, beim Abspielen nur DrawRange verlängern
+  if (visitedLine) { pathGrp.remove(visitedLine); visitedLine.geometry.dispose(); visitedLine.material.dispose(); visitedLine = null; }
+  if (trajectory.length > 1) {
+    const arr = new Float32Array(trajectory.length * 3);
+    trajectory.forEach((s, i) => { arr[i*3] = s.pos.X; arr[i*3+1] = s.pos.Y; arr[i*3+2] = s.pos.Z; });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    geo.setDrawRange(0, 0);
+    visitedLine = new THREE.Line(geo, new THREE.LineBasicMaterial({color:PATH_COL, linewidth:pathLineWidth}));
+    visitedLine.frustumCulled = false;
+    pathGrp.add(visitedLine);
   }
 }
 
@@ -1744,13 +1753,9 @@ function updateMarkerPose(ipos){markerGrp.position.set(ipos.X,ipos.Y,ipos.Z);mar
 // Visited path
 let visitedLine=null;
 function updateVisitedPath(t){
-  if(visitedLine){pathGrp.remove(visitedLine);visitedLine=null;}
-  if(!trajectory.length||t<=0)return;
-  const tf=simTToTrajT(t);
-  const cutIdx=Math.floor(tf*trajMax);
-  if(cutIdx<1)return;
-  const pts=trajectory.slice(0,cutIdx+1).map(s=>new THREE.Vector3(s.pos.X,s.pos.Y,s.pos.Z));
-  if(pts.length>1){visitedLine=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:PATH_COL,linewidth:pathLineWidth}));pathGrp.add(visitedLine);}
+  if(!visitedLine)return;
+  const cutIdx=(trajectory.length&&t>0)?Math.floor(simTToTrajT(t)*trajMax):0;
+  visitedLine.geometry.setDrawRange(0, cutIdx>=1 ? cutIdx+1 : 0);
 }
 function setStatus(cls,txt){const el=document.getElementById('sim-status');el.className='sstatus '+cls;el.textContent=txt;}
 function applySimT(t){
@@ -1763,7 +1768,7 @@ function applySimT(t){
   const trajSamples = trajectory.length;
   document.getElementById('pos-v').textContent=`${idx+1} / ${N}` + (trajSamples>N?` (${trajSamples} Schritte)`:'');
   updateVisitedPath(sim.t);updateGutterActive(pos[idx].lineNum);
-  if(parsedData.steps){const si=parsedData.steps.findIndex(s=>s.type==='move'&&s.posIdx===idx);if(si>=0)sim.stepIdx=si;}
+  {const si=parsedData.stepOfPos?parsedData.stepOfPos[idx]:-1;if(si>=0)sim.stepIdx=si;}
   // Bei exaktem Positionsindex: präzise ikTable-Winkel verwenden
   let angles;
   if(Number.isInteger(sim.t) && ikTable[idx] && ikTable[idx].ok) {
@@ -1892,13 +1897,29 @@ requestAnimationFrame(frame);
 document.getElementById('b-start').onclick=()=>{pauseSim();applySimT(0);if((parsedData.steps&&parsedData.steps.length))applyStep(0);else setStatus('stopped','STOPPED');};
 document.getElementById('b-end').onclick=()=>{pauseSim();applySimT(Math.max(0,parsedData.positions.length-1));const last=((parsedData.steps&&parsedData.steps.length)||1)-1;if((parsedData.steps&&parsedData.steps.length))applyStep(last);else setStatus('stopped','STOPPED');};
 document.getElementById('b-stop').onclick=()=>{pauseSim();setStatus('paused','PAUSED');};
-document.getElementById('b-playfwd').onclick=()=>{if(sim.playing&&sim.dir===1){pauseSim();setStatus('paused','PAUSED');}else{parseAndLoad();if(!parsedData.positions.length)return;if(sim.t>=parsedData.positions.length-1)applySimT(0);sim.playing=true;sim.dir=1;sim.stepTarget=null;document.getElementById('b-playfwd').classList.add('on');document.getElementById('b-playrev').classList.remove('on');setStatus('playing','▶ FORWARD');}};
-document.getElementById('b-playrev').onclick=()=>{if(sim.playing&&sim.dir===-1){pauseSim();setStatus('paused','PAUSED');}else{parseAndLoad();if(!parsedData.positions.length)return;if(sim.t<=0)applySimT(parsedData.positions.length-1);sim.playing=true;sim.dir=-1;sim.stepTarget=null;document.getElementById('b-playrev').classList.add('on');document.getElementById('b-playfwd').classList.remove('on');setStatus('playing','◀ BACKWARD');}};
+// Abspielen; bei geändertem Programm erst parsen (IK), danach automatisch starten
+let _playAfterParse=0;
+function startPlay(dir){
+  const N=parsedData.positions.length; if(!N)return;
+  if(dir>0&&sim.t>=N-1)applySimT(0);
+  if(dir<0&&sim.t<=0)applySimT(N-1);
+  sim.playing=true;sim.dir=dir;sim.stepTarget=null;
+  document.getElementById('b-playfwd').classList.toggle('on',dir>0);
+  document.getElementById('b-playrev').classList.toggle('on',dir<0);
+  setStatus('playing',dir>0?'▶ FORWARD':'◀ BACKWARD');
+}
+function togglePlay(dir){
+  if(sim.playing&&sim.dir===dir){pauseSim();setStatus('paused','PAUSED');return;}
+  if(_codeEl.value!==_parsedCode||_ikPending){_playAfterParse=dir;if(!_ikPending)parseAndLoad();return;}
+  startPlay(dir);
+}
+document.getElementById('b-playfwd').onclick=()=>togglePlay(1);
+document.getElementById('b-playrev').onclick=()=>togglePlay(-1);
 document.getElementById('b-stepfwd').onclick=()=>{if(!(parsedData.steps&&parsedData.steps.length))return;pauseSim();applyStep(sim.stepIdx+1);};
 document.getElementById('b-steprev').onclick=()=>{if(!(parsedData.steps&&parsedData.steps.length))return;pauseSim();applyStep(sim.stepIdx-1);};
 document.getElementById('spd-s').addEventListener('input',function(){document.getElementById('spd-v').textContent=this.value+'%';});
 document.getElementById('pos-s').addEventListener('mousedown',()=>{if(sim.playing){pauseSim();setStatus('paused','PAUSED');}});
-document.getElementById('pos-s').addEventListener('input',function(){const posIdx=Math.round(parseFloat(this.value));applySimT(posIdx);if(parsedData.steps){const si=parsedData.steps.findIndex(s=>s.type==='move'&&s.posIdx===posIdx);if(si>=0)applyStep(si);}});
+document.getElementById('pos-s').addEventListener('input',function(){const posIdx=Math.round(parseFloat(this.value));applySimT(posIdx);{const si=parsedData.stepOfPos?parsedData.stepOfPos[posIdx]:-1;if(si>=0)applyStep(si);}});
 
 window.addEventListener('keydown',e=>{
   if(e.key==='F5'){e.preventDefault();document.getElementById('b-playfwd').click();return;}
@@ -1914,14 +1935,38 @@ window.addEventListener('keydown',e=>{
 // ═══════════════════════════════════════════════════
 // PATH BUILDING
 // ═══════════════════════════════════════════════════
+const FRAME_LIMIT = 300;   // bis zu dieser Punktzahl: Koordinatenkreuz je Zielpunkt, darüber Punktwolke
+
+// Gruppe leeren und eigene Geometrien/Materialien freigeben (ArrowHelper-Geometrie ist geteilt)
+function _disposeGroup(grp){
+  grp.traverse(o=>{
+    if(o.isArrowHelper){ o.line.material.dispose(); o.cone.material.dispose(); return; }
+    if(o.parent&&o.parent.isArrowHelper) return;
+    if(o.geometry) o.geometry.dispose();
+    if(o.material) o.material.dispose();
+  });
+  grp.clear();
+}
+
 function buildScene(positions){ requestRender();
-  posGrp.clear();pathGrp.clear();
+  _disposeGroup(posGrp);_disposeGroup(pathGrp);
   visitedLine=null;markerGrp.visible=false;
   if(!positions.length)return;
-  const pts=positions.map(p=>new THREE.Vector3(p.X,p.Y,p.Z));
-  if(pts.length>1)pathGrp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:PLANNED_COL,linewidth:pathLineWidth})));
-  positions.forEach((pos,i)=>{const g=makeFrame(pos);g.userData.posIdx=i;posGrp.add(g);});
-  const box=new THREE.Box3();pts.forEach(p=>box.expandByPoint(p));
+  const N=positions.length, arr=new Float32Array(N*3);
+  positions.forEach((p,i)=>{arr[i*3]=p.X;arr[i*3+1]=p.Y;arr[i*3+2]=p.Z;});
+  if(N>1){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(arr,3));
+    pathGrp.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:PLANNED_COL,linewidth:pathLineWidth})));}
+  if(N<=FRAME_LIMIT){
+    positions.forEach((pos,i)=>{const g=makeFrame(pos);g.userData.posIdx=i;posGrp.add(g);});
+  }else{
+    const col=new Float32Array(N*3),c=new THREE.Color();
+    positions.forEach((p,i)=>{c.setHex(TYPE_COL[p.type]!==undefined?TYPE_COL[p.type]:0xffffff);col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b;});
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.BufferAttribute(arr.slice(),3));
+    g.setAttribute('color',new THREE.BufferAttribute(col,3));
+    posGrp.add(new THREE.Points(g,new THREE.PointsMaterial({size:4,sizeAttenuation:false,vertexColors:true})));
+  }
+  const box=new THREE.Box3();box.setFromArray(arr);
   const ctr=new THREE.Vector3();box.getCenter(ctr);const span=box.getSize(new THREE.Vector3()).length();
   orbitTarget.copy(ctr);orbitState.radius=Math.max(800,span*1.9);updateCamera();
 }
@@ -1929,29 +1974,46 @@ function buildScene(positions){ requestRender();
 // ═══════════════════════════════════════════════════
 // GUTTER (Zeilennummern, aktive Zeile)
 // ═══════════════════════════════════════════════════
-function buildGutter(count){
-  const gut=document.getElementById('gutter');gut.innerHTML='';
-  for(let i=0;i<count;i++){
-    const row=document.createElement('div');row.className='gl';row.dataset.line=i;
-    const ln=document.createElement('span');ln.className='ln';ln.textContent=i+1;
-    row.appendChild(ln);gut.appendChild(row);
-  }
+// Es werden nur die gerade sichtbaren Zeilennummern erzeugt (auch bei 50.000 Zeilen nur ~50 Elemente)
+let _gutLines=0, _gutActive=-1, _gutKey='';
+function _lineHeight(){ return parseFloat(getComputedStyle(_codeEl).lineHeight)||20; }
+function renderGutter(){
+  const lh=_lineHeight(), st=_codeEl.scrollTop;
+  const first=Math.max(0,Math.floor(st/lh)), cnt=Math.ceil(_gutEl.clientHeight/lh)+2;
+  const last=Math.min(_gutLines,first+cnt);
+  const key=first+'|'+last+'|'+_gutActive+'|'+st;
+  if(key===_gutKey)return; _gutKey=key;
+  let html='<div style="transform:translateY('+(first*lh-st)+'px)">';
+  for(let i=first;i<last;i++) html+='<div class="gl'+(i===_gutActive?' active':'')+'">'+(i+1)+'</div>';
+  _gutEl.innerHTML=html+'</div>';
 }
-function rebuildGutter(){const lines=document.getElementById('code-input').value.split(/\r?\n/);buildGutter(lines.length);}
-document.getElementById('code-input').addEventListener('scroll',function(){document.getElementById('gutter').scrollTop=this.scrollTop;});
+function buildGutter(count){ _gutLines=count; _gutKey=''; renderGutter(); }
+function rebuildGutter(){
+  const v=_codeEl.value; let n=1;
+  for(let i=v.indexOf('\n');i>=0;i=v.indexOf('\n',i+1)) n++;
+  buildGutter(n);
+}
+_codeEl.addEventListener('scroll',renderGutter);
 function updateGutterActive(lineNum){
-  document.querySelectorAll('#gutter .gl').forEach(r=>r.classList.remove('active'));
-  const t=document.querySelector(`#gutter .gl[data-line="${lineNum}"]`);if(!t)return;t.classList.add('active');
-  const ta=document.getElementById('code-input');const lh=parseFloat(getComputedStyle(ta).lineHeight)||20;const top=lineNum*lh;
-  if(top<ta.scrollTop||top>ta.scrollTop+ta.clientHeight-lh)ta.scrollTop=Math.max(0,top-ta.clientHeight/2);
+  if(lineNum===_gutActive)return;
+  _gutActive=lineNum;
+  const lh=_lineHeight(), top=lineNum*lh;
+  if(top<_codeEl.scrollTop||top>_codeEl.scrollTop+_codeEl.clientHeight-lh)_codeEl.scrollTop=Math.max(0,top-_codeEl.clientHeight/2);
+  renderGutter();
 }
 
 // ═══════════════════════════════════════════════════
 // PARSE & LOAD
 // ═══════════════════════════════════════════════════
+let _parsedCode=null, _ikPending=false;
 function parseAndLoad(){
-  const code=document.getElementById('code-input').value;
+  const code=_codeEl.value;
+  _parsedCode=code; _ikPending=true;
   parsedData=parseKRL(code);const N=parsedData.positions.length;
+  // Schnellzugriff: Positionsindex -> Programmschritt
+  parsedData.stepOfPos=new Int32Array(N).fill(-1);
+  parsedData.steps.forEach((s,i)=>{if(s.type==='move'&&parsedData.stepOfPos[s.posIdx]<0)parsedData.stepOfPos[s.posIdx]=i;});
+  _gutActive=-1;
   ensureBasesForProgram(); // Eintraege fuer alle referenzierten BASE_DATA[n] sicherstellen
   bakeBaseOffset(); // Code-Koordinaten + jeweils aktiver BASE-Offset pro Punkt -> Welt
   buildGutter(code.split(/\r?\n/).length);
@@ -1964,9 +2026,12 @@ function parseAndLoad(){
   parseProgress(15, N + ' Punkte');
   setTimeout(()=>{
     computeIKTableProgressive(parsedData.positions, ()=>{
+      _ikPending=false;
       if(N>0){applySimT(0);sim.stepIdx=0;if(parsedData.steps.length)applyStep(0);else setStatus('paused','BEREIT');}
       else setStatus('stopped','STOPPED');
       parseProgressHide();
+      aPlotInvalidate();
+      if(_playAfterParse){const d=_playAfterParse;_playAfterParse=0;startPlay(d);}
     });
   },10);
 }
@@ -2071,7 +2136,7 @@ function toggleAPlot() {
     // Sofort _aPlotPos setzen damit erster Drag funktioniert
     window._aPlotPos = (parsedData && parsedData.positions) ? parsedData.positions : [];
     _aPlotCalcDists(window._aPlotPos);
-    aPlotDraw();
+    aPlotInvalidate();
   }
 }
 
@@ -2273,28 +2338,39 @@ function aPlotDraw() {
   var ML=56, MT=14, MR=10, MB=30;
   var CW = W-ML-MR, CH = H-MT-MB;
   var ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, W, H);
-
-  _aPlotDrawBackground(ctx, ML, MT, CW, CH, W, H);
-
   var pos = (parsedData && parsedData.positions) ? parsedData.positions : [];
-  if (!pos.length) {
-    ctx.fillStyle = '#9a9a9f'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
-    ctx.fillText('Kein Programm geladen', W/2, H/2);
-    return;
-  }
 
-  _aPlotCalcDists(pos);
+  // Statische Ebenen (Raster, Map, Kurve, Singularitäten) nur bei Änderung neu zeichnen
+  if (!_aPlotCache || _aPlotCache.width !== W || _aPlotCache.height !== H || _aPlotCacheVer !== _aPlotVersion) {
+    if (!_aPlotCache) _aPlotCache = document.createElement('canvas');
+    _aPlotCache.width = W; _aPlotCache.height = H; _aPlotCacheVer = _aPlotVersion;
+    var c2 = _aPlotCache.getContext('2d');
+    c2.clearRect(0, 0, W, H);
+    _aPlotDrawBackground(c2, ML, MT, CW, CH, W, H);
+    if (!pos.length) {
+      c2.fillStyle = '#9a9a9f'; c2.font = '13px monospace'; c2.textAlign = 'center';
+      c2.fillText('Kein Programm geladen', W/2, H/2);
+    } else {
+      _aPlotCalcDists(pos);
+      var tot = _aPlotDists[_aPlotDists.length-1] || 1;
+      _aPlotDrawVerticalGrid(c2, ML, MT, CW, CH, pos, tot);
+      _aPlotDrawReachBands(c2, ML, MT, CW, CH, pos, tot);
+      _aPlotDrawCurves(c2, ML, MT, CW, CH, pos, tot);
+      _aPlotDrawSingMarkers(c2, ML, MT, CW, CH, pos, tot);
+    }
+  }
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(_aPlotCache, 0, 0);
+  if (!pos.length) return;
   var total = _aPlotDists[_aPlotDists.length-1] || 1;
   _aPlotML=ML; _aPlotMT=MT; window._aPlotCW=CW; window._aPlotCH=CH;
   window._aPlotTotal=total; window._aPlotPos=pos;
-
-  _aPlotDrawVerticalGrid(ctx, ML, MT, CW, CH, pos, total);
-  _aPlotDrawReachBands(ctx, ML, MT, CW, CH, pos, total);
-  _aPlotDrawCurves(ctx, ML, MT, CW, CH, pos, total);
-  _aPlotDrawSingMarkers(ctx, ML, MT, CW, CH, pos, total);
   _aPlotDrawCursor(ctx, ML, MT, CW, CH, pos, total);
 }
+
+// Zwischenspeicher des A-Plots verwerfen und neu zeichnen
+var _aPlotCache = null, _aPlotCacheVer = -1, _aPlotVersion = 0;
+function aPlotInvalidate() { _aPlotVersion++; aPlotDraw(); }
 
 // Map Canvas Drag: A-Wert eines Punktes ändern
 (function() {
@@ -2338,7 +2414,7 @@ function aPlotDraw() {
       _aPlotEdits[_aPlotDragIdx] = newA;
       var hint = document.getElementById('aplot-edit-hint');
       if (hint) hint.style.display = '';
-      aPlotDraw();
+      aPlotInvalidate();
       aPlotLivePreview(_aPlotDragIdx, newA);
       // Status aktualisieren
       var info = document.getElementById('aplot-info');
@@ -2416,7 +2492,7 @@ function aPlotScanReachability() {
       _aPlotReachAngles = wpAngles;
       _aPlotReachSing   = wpSing;
       if (overlay) overlay.style.display = 'none';
-      aPlotDraw();
+      aPlotInvalidate();
       return;
     }
     // Fortschritt aktualisieren
@@ -2621,14 +2697,14 @@ function aPlotAutoSolve() {
   if (hint) hint.style.display = '';
   if (infoEl) infoEl.textContent =
     '⚡ Auto-Lösung: Δ' + bestCost.toFixed(0) + '° — Übernehmen zum Anwenden';
-  aPlotDraw();
+  aPlotInvalidate();
 }
 
 function aPlotReset() {
   _aPlotEdits = {};
   var hint = document.getElementById('aplot-edit-hint');
   if (hint) hint.style.display = 'none';
-  aPlotDraw();
+  aPlotInvalidate();
 }
 
 function aPlotApply() {
