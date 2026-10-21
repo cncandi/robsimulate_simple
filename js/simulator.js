@@ -1343,6 +1343,30 @@ function parseProgressHide() {
 }
 
 // IK-Tabelle häppchenweise berechnen, damit die Fortschrittsleiste echt mitläuft (UI bleibt responsiv).
+// Achssprünge zwischen aufeinanderfolgenden Sätzen erkennen (z. B. Handachse klappt um, weil A5 an der
+// Achsgrenze ist). Ein realer Roboter bleibt dort mit Endschalter stehen; die Simulation weicht nur aus.
+let _ikJumps = [];
+function _ikJumpCheck() {
+  const el = document.getElementById('sim-warn'), P = parsedData.positions;
+  _ikJumps = [];
+  // Prüfung auf den Bahnstützpunkten (Abstand max. 25 mm): normale Bewegung bleibt dort bei wenigen Grad
+  let lastSeg = -1;
+  for (let k = 1; k < trajectory.length; k++) {
+    const s = trajectory[k], a = trajectory[k-1].angles, b = s.angles, i = s.segIdx;
+    if (!a || !b || !P[i] || P[i].type === 'PTP' || i === lastSeg) continue;
+    let jmax = 0, jx = 0;
+    for (let j = 0; j < 6; j++) { const d = Math.abs(shortestAngleDiff(a[j], b[j])); if (d > jmax) { jmax = d; jx = j; } }
+    if (jmax > 15) { _ikJumps.push({ i: i, axis: jx + 1, deg: jmax }); lastSeg = i; }
+  }
+  if (!el) return;
+  if (!_ikJumps.length) { el.style.display = 'none'; return; }
+  const f = _ikJumps[0], ln = P[f.i].lineNum !== undefined ? P[f.i].lineNum + 1 : '?';
+  el.textContent = 'Achtung: Achssprung an ' + _ikJumps.length + ' Sätzen, erster bei Satz ' + (f.i + 1) + ' (Zeile ' + ln + '), A' + f.axis + ' '
+    + Math.round(f.deg) + '°. Achsgrenze erreicht – auf dem Roboter nicht fahrbar. Robot Map prüfen.';
+  el.style.display = '';
+  el.onclick = function() { pauseSim(); applySimT(Math.max(0, f.i - 1)); const si = parsedData.stepOfPos ? parsedData.stepOfPos[f.i - 1] : -1; if (si >= 0) applyStep(si); };
+}
+
 function computeIKTableProgressive(positions, done) {
   ikTable = [];
   var N = positions.length;
@@ -1566,7 +1590,9 @@ function osdToBinaryStl(arrayBuffer) {
 const sim={t:0,playing:false,dir:1,stepTarget:null,stepIdx:0};
 
 function simSpeed(){return(parseInt(document.getElementById('spd-s').value)/100)*3.0;}
-function lerpPos(a,b,f){return{X:a.X+(b.X-a.X)*f,Y:a.Y+(b.Y-a.Y)*f,Z:a.Z+(b.Z-a.Z)*f,A:a.A+(b.A-a.A)*f,B:a.B+(b.B-a.B)*f,C:a.C+(b.C-a.C)*f};}
+// Orientierung über den kürzesten Winkelweg (A 179,8° → -179,6° dreht 0,6°, nicht 359,4°)
+function lerpPos(a,b,f){return{X:a.X+(b.X-a.X)*f,Y:a.Y+(b.Y-a.Y)*f,Z:a.Z+(b.Z-a.Z)*f,
+  A:a.A+shortestAngleDiff(a.A,b.A)*f,B:a.B+shortestAngleDiff(a.B,b.B)*f,C:a.C+shortestAngleDiff(a.C,b.C)*f};}
 function shortestAngleDiff(from, to) {
   // Returns smallest signed difference (always <= 180°)
   var d = ((to - from) % 360 + 540) % 360 - 180;
@@ -1776,11 +1802,9 @@ function buildTrajectory(positions, ikTab) {
       const angCurrLin = angCurr.map(function(v, j) {
         return angPrev[j] + shortestAngleDiff(angPrev[j], v);
       });
-      // Für ersten Schritt: linear interpolieren als sicherer Warm-Start
-      let warmAng = lerpAngles(angPrev, angCurrLin, 1/steps);
-      // Erster Schritt immer linear (kein IK-Sprung am Segment-Anfang)
-      pushSample(lerpPos(prev, curr, 1/steps), warmAng, i);
-      for (let s = 2; s <= steps; s++) {
+      // Alle Stützpunkte per IK auf der Geraden (auch der erste); Achsinterpolation nur als Rückfall bei Sprung
+      let warmAng = angPrev.slice();
+      for (let s = 1; s <= steps; s++) {
         const f = s / steps;
         const pos = lerpPos(prev, curr, f);
         if (dist < 20) {
@@ -2227,6 +2251,7 @@ function parseAndLoad(){
       if(N>0){applySimT(0);sim.stepIdx=0;if(parsedData.steps.length)applyStep(0);else setStatus('paused','BEREIT');}
       else setStatus('stopped','STOPPED');
       parseProgressHide();
+      _ikJumpCheck();
       aPlotInvalidate();
       if(_playAfterParse){const d=_playAfterParse;_playAfterParse=0;startPlay(d);}
     });

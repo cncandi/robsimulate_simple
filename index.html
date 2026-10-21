@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261021n">
+<link rel="stylesheet" href="./css/simulator.css?v=20261021p">
 </head>
 <body>
 
@@ -116,6 +116,7 @@
     <div class="card">
       <div class="card-head"><svg class="ico"><use href="#i-pulse"/></svg>Ablauf</div>
       <div class="info-line" id="marker-info"></div>
+      <div class="info-line warn" id="sim-warn" style="display:none" title="Klicken: zur ersten Stelle springen"></div>
       <div class="kv" style="margin:10px 0 12px">
         <div><b id="pos-v">— / —</b><span>Satz</span></div>
         <div><b id="tcp-vel-v">0 mm/min</b><span>TCP-Vorschub</span></div>
@@ -231,7 +232,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261021n"></script>
-<script src="./js/simulator.js?v=20261021n"></script>
+<script src="./js/dp-solver.js?v=20261021p"></script>
+<script src="./js/simulator.js?v=20261021p"></script>
 </body>
 </html>
