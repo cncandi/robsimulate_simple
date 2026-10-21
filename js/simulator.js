@@ -1599,6 +1599,7 @@ var _realtimeMode = false;  // Standard: aus
   DPSolver.settings.smoothSamples = 150;
 })();
 let trajMax = 0;       // trajectory.length - 1
+let trajSegEnd = null; // Int32Array: Index des letzten Stützpunkts je Satz
 
 // ── Geometric helpers ─────────────────────────────────────
 function vec3(p){return[p.X,p.Y,p.Z];}
@@ -1819,6 +1820,10 @@ function buildTrajectory(positions, ikTab) {
   }
 
   trajMax = Math.max(0, trajectory.length - 1);
+  // Letzter Stützpunkt je Satz (liegt genau auf dem Programmpunkt) für die Umrechnung Satz → Stützpunkt
+  trajSegEnd = new Int32Array(N).fill(-1);
+  for (let k = 0; k < trajectory.length; k++) { const si = trajectory[k].segIdx; if (si >= 0 && si < N) trajSegEnd[si] = k; }
+  for (let i = 1; i < N; i++) if (trajSegEnd[i] < 0) trajSegEnd[i] = trajSegEnd[i-1];
 
   // Abgefahrene Bahn: einmal bauen, beim Abspielen nur DrawRange verlängern.
   // Gerade Abschnitte nur mit Endpunkt (Kreis/Spline mit allen Stützpunkten) -> weniger Eckpunkte;
@@ -1863,10 +1868,16 @@ function getTrajSample(t) {
   return {pos, angles, segIdx: a.segIdx};
 }
 
-// Legacy: map t (0..N-1) to trajectory fraction
+// Satzposition t (0..N-1) → Anteil 0..1 der Stützpunktliste. Satzweise: innerhalb von Satz k+1 linear
+// zwischen dem Endstützpunkt von Satz k und dem von Satz k+1 (Stützpunkte liegen gleichmäßig auf der Strecke).
+// Vorher gleichmäßig über alle Stützpunkte → Sätze mit vielen/wenigen Stützpunkten liefen zu langsam/schnell.
 function simTToTrajT(t) {
   const N = parsedData.positions.length;
-  return N > 1 ? t / (N-1) : 0;
+  if (N < 2 || !trajMax) return 0;
+  if (!trajSegEnd || trajSegEnd.length !== N) return t / (N-1);
+  const k = Math.max(0, Math.min(N - 2, Math.floor(t))), f = Math.max(0, Math.min(1, t - k));
+  const a = Math.max(0, trajSegEnd[k]), b = Math.max(a, trajSegEnd[k+1]);
+  return (a + f * (b - a)) / trajMax;
 }
 
 function getIPos(t){
