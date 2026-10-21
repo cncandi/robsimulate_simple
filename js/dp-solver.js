@@ -5,21 +5,12 @@
 // ═══════════════════════════════════════════════════════════════
 
 // ── Hilfsfunktionen ───────────────────────────────────────────
-function _angleDeltaDeg(a, b) {
-  var d = b - a;
-  while (d > 180) d -= 360;
-  while (d < -180) d += 360;
-  return d;
-}
-
 function _unwrapAngle(prev, cur) {
   var c = cur;
   while (c - prev > 180)  c -= 360;
   while (c - prev < -180) c += 360;
   return c;
 }
-
-function _clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 function _jlPenalty(q, limits, safety) {
   safety = safety || 3;
@@ -199,7 +190,6 @@ var DPSolver = {
   },
 
   _dp: function(layers, qStart) {
-    var S = this.settings;
     var self = this;
     var N = layers.length;
     var costs   = layers.map(function(l){ return new Array(l.length).fill(1e15); });
