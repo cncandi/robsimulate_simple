@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261022b">
+<link rel="stylesheet" href="./css/simulator.css?v=20261022d">
 </head>
 <body>
 
@@ -199,8 +199,9 @@
         <option value="auto">Auto</option><option value="500">500</option><option value="1000">1000</option><option value="2000">2000</option><option value="all">Alle Punkte</option></select></div>
       <div class="side-row"><span>A-Schritt</span><select id="aplot-astep" class="inp">
         <option value="6">6°</option><option value="3" selected>3°</option><option value="2">2°</option></select></div>
-      <div class="side-row"><span>Abstand</span><input id="aplot-safe" class="inp" type="number" value="12" min="0" max="90" step="3"><span class="u">°</span></div>
-      <div class="side-row" title="Radius der Roboterglieder für die Kollisionsprüfung gegen das gedruckte Teil"><span>Kollision</span><input id="aplot-coll" class="inp" type="number" value="60" min="0" max="300" step="10"><span class="u">mm</span></div>
+      <div class="side-row"><span>Abstand</span><input id="aplot-safe" class="inp" onchange="if(_aMap)aPlotMsg('Einstellung geändert – MAP neu erzeugen')" type="number" value="12" min="0" max="90" step="3"><span class="u">°</span></div>
+      <div class="side-row" title="Ellbogen-Singularität melden, wenn der Arm weniger als diese Strecke vor seiner maximalen Reichweite (gestreckt) ist"><span>Ellbogen</span><input id="aplot-elbow" class="inp" onchange="if(_aMap)aPlotMsg('Einstellung geändert – MAP neu erzeugen')" type="number" value="50" min="0" max="500" step="10"><span class="u">mm</span></div>
+      <div class="side-row" title="Radius der Roboterglieder für die Kollisionsprüfung gegen das gedruckte Teil"><span>Kollision</span><input id="aplot-coll" class="inp" onchange="if(_aMap)aPlotMsg('Einstellung geändert – MAP neu erzeugen')" type="number" value="60" min="0" max="300" step="10"><span class="u">mm</span></div>
       <div class="side-h">Verifikation</div>
       <div id="aplot-verify">—</div>
       <div class="side-help">Knoten ziehen · auf Linie ziehen fügt Knoten ein · Rechtsklick löscht Knoten · Klick setzt Simulation</div>
@@ -236,7 +237,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261022b"></script>
-<script src="./js/simulator.js?v=20261022b"></script>
+<script src="./js/dp-solver.js?v=20261022d"></script>
+<script src="./js/simulator.js?v=20261022d"></script>
 </body>
 </html>

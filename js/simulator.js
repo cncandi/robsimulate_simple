@@ -1210,6 +1210,18 @@ function computeManipulability(angles_deg) {
 // Wrist:    |sin(A5)| < sin(8°)  → Achsen 4+6 kollinear
 // Shoulder: Handgelenk-XY < 50mm → WZ auf A1-Achse
 // Elbow:    isSingular() && weder Wrist noch Shoulder → Jacobi-Rangabfall
+// Größter Abstand Schulter (A2-Achse) – Handwurzel: Arm gestreckt (A3 = Streckwinkel aus den Achsmaßen)
+var _armMaxCache = { key: '', v: 0 };
+function _armMaxReach() {
+  var J = JOINTS_DEF, key = JSON.stringify(J.map(function(j) { return j.off; }));
+  if (_armMaxCache.key === key) return _armMaxCache.v;
+  var o2 = J[1].off, o3 = J[2].off, ux = o3[0] + J[3].off[0], uz = o3[2];
+  var th3s = Math.atan2(o2[0]*uz - o2[2]*ux, o2[0]*ux + o2[2]*uz) * 180 / Math.PI * FK_SIGNS[2];
+  var p = fkAll([0, -90, th3s, 0, 45, 0]).pts;
+  _armMaxCache = { key: key, v: Math.hypot(p[4][0]-p[1][0], p[4][1]-p[1][1], p[4][2]-p[1][2]) };
+  return _armMaxCache.v;
+}
+function _elbowWarnMm() { var el = document.getElementById('aplot-elbow'); var v = el ? parseFloat(el.value) : 50; return isFinite(v) ? Math.max(0, v) : 50; }
 function classifySingTypes(angles_deg) {
   var types = [];
 
@@ -1223,15 +1235,12 @@ function classifySingTypes(angles_deg) {
   if (Math.sqrt(wx*wx + wy*wy) < 60) types.push('shoulder');
 
   // ── 3. Ellbogen (Streckstellung) ──────────────────────────────
-  // Gestreckt ist der Arm, wenn beide Ellbogen-Lösungen der IK zusammenfallen: A3 = Streckwinkel.
-  // Der Streckwinkel folgt aus den Achsmaßen (Unterarm-Versatz) und ist je Roboter verschieden
-  // (KR8: ca. 18°, nicht 90°). Singulär innerhalb ±10° um den Streckwinkel.
+  // Gestreckt ist der Arm, wenn Schulter (A2-Achse) und Handwurzel den größten Abstand haben
+  // (beide Ellbogen-Lösungen fallen zusammen, KR8 bei A3 ≈ 17,6°). Warnung, wenn der Abstand
+  // weniger als die eingestellte Strecke (Vorgabe 50 mm) unter diesem Maximum liegt.
   if (ikAnalyticSupported()) {
-    var J = JOINTS_DEF, o2 = J[1].off, o3 = J[2].off, ux = o3[0] + J[3].off[0], uz = o3[2];
-    var th3s = Math.atan2(o2[0]*uz - o2[2]*ux, o2[0]*ux + o2[2]*uz);
-    var dd = angles_deg[2] * FK_SIGNS[2] * Math.PI / 180 - th3s;
-    dd = Math.atan2(Math.sin(dd), Math.cos(dd));
-    if (Math.abs(dd) < 10 * Math.PI / 180) types.push('elbow');
+    var pts = fk.pts, dS = Math.hypot(pts[4][0]-pts[1][0], pts[4][1]-pts[1][1], pts[4][2]-pts[1][2]);
+    if (_armMaxReach() - dS < _elbowWarnMm()) types.push('elbow');
   } else {
     var a3rad = angles_deg[2] * Math.PI / 180;
     if (Math.abs(Math.cos(a3rad)) < 0.17) types.push('elbow');
@@ -1434,7 +1443,9 @@ function _ikJumpCheck() {
   el.onclick = function() { pauseSim(); applySimT(Math.max(0, f.i - 1)); const si = parsedData.stepOfPos ? parsedData.stepOfPos[f.i - 1] : -1; if (si >= 0) applyStep(si); };
 }
 
+let _ikGen = 0;  // laufende Berechnung abbrechen, wenn eine neue startet
 function computeIKTableProgressive(positions, done) {
+  const gen = ++_ikGen;
   ikTable = [];
   var N = positions.length;
   if (!N) { buildTrajectory(positions, ikTable); done && done(); return; }
@@ -1443,6 +1454,7 @@ function computeIKTableProgressive(positions, done) {
     _applyToolToTCPDEF(positions[0].toolN || 1);
     parseProgress(40, N + ' Punkte — IK wird berechnet…');
     setTimeout(function(){
+      if (gen !== _ikGen) return;
       try { _ikTableDPSolver(positions, N); } catch(e) { _ikTableFallbackDP(positions, N); }
       buildTrajectory(positions, ikTable);
       parseProgress(100, 'fertig'); done && done();
@@ -1452,6 +1464,7 @@ function computeIKTableProgressive(positions, done) {
   // Große Programme oder mehrere Tools: Schnell-IK in Häppchen, TCP pro Punkt gesetzt
   var prevQ = _ikGetStartQ(), i = 0, CH = Math.max(25, Math.floor(N/50));
   (function chunk(){
+    if (gen !== _ikGen) return;
     var end = Math.min(i + CH, N);
     for (; i < end; i++) {
       var p = positions[i];
@@ -2347,6 +2360,7 @@ let _parsedCode=null, _ikPending=false;
 function parseAndLoad(){
   const code=_codeEl.value;
   _parsedCode=code; _ikPending=true;
+  if(applyBase._t){ clearTimeout(applyBase._t); applyBase._pending=false; }
   if(typeof _updateDirtyUI==='function')_updateDirtyUI();
   parsedData=parseKRL(code);const N=parsedData.positions.length;
   // Schnellzugriff: Positionsindex -> Programmschritt
