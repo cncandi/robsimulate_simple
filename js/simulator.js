@@ -1,6 +1,5 @@
 // RobSimul Simple — reduzierte Fassung von RobSimul V0.84
 // Umfang: Roboterwahl (RobLib), KUKA-KRL-Simulation, A-Plot
-const APP_VERSION = 'V1.0';
 // On-Demand-Rendering: nur rendern wenn nötig (spart GPU/CPU/Akku im Leerlauf)
 let _renderFrames = 4;
 function requestRender(n) { _renderFrames = Math.max(_renderFrames, n || 2); }
@@ -8,24 +7,6 @@ function requestRender(n) { _renderFrames = Math.max(_renderFrames, n || 2); }
 if (!/[?&]debug\b/.test(location.search)) { const _noop = function(){}; console.log = _noop; console.debug = _noop; }
 
 
-// ── Splash Screen ─────────────────────────────────────────────
-function splashProgress(pct, msg) {
-  var bar = document.getElementById('splash-bar');
-  var txt = document.getElementById('splash-msg');
-  if (bar) bar.style.width = pct + '%';
-  if (txt && msg) txt.textContent = msg;
-}
-
-function splashHide() {
-  var el = document.getElementById('splash-screen');
-  if (!el) return;
-  el.style.transition = 'opacity .5s ease';
-  el.style.opacity = '0';
-  setTimeout(function(){ el.style.display = 'none'; }, 520);
-}
-
-// Schrittweise Progress während Initialisierung
-splashProgress(10, '3D Szene wird aufgebaut…');
 // ═══════════════════════════════════════════════════
 // KUKA KR8 R1420 HW — KINEMATIK
 // Robot CS: X=vorwärts, Y=links, Z=oben
@@ -1855,7 +1836,6 @@ document.getElementById('parse-btn').addEventListener('click',function(){
 // ═══════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════
-splashProgress(60, 'Robotermodell wird erstellt…');
 buildRobotModel([0,-90,90,0,0,0]);
 document.getElementById('code-input').value=`$BASE = BASE_DATA[1]
 $TOOL=TOOL_DATA[24]
@@ -2591,17 +2571,9 @@ function aPlotApply() {
   });
 })();
 
-splashProgress(80, 'Programm wird geparst…');
 parseAndLoad();
 
 window.addEventListener('load', function() {
   resize();
   setView('iso');
-  splashProgress(100, 'Bereit.');
-  setTimeout(splashHide, 400);
-  ['ver-header','ver-splash'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.textContent = APP_VERSION;
-  });
-  document.title = 'RobSimul Simple ' + APP_VERSION + ' · cnc-technik.de';
 });

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261021c">
+<link rel="stylesheet" href="./css/simulator.css?v=20261021d">
 </head>
 <body>
 
@@ -50,7 +50,7 @@
   <button class="hbtn" onclick="loadProgram()" title="KRL-Datei (.src) öffnen"><svg class="ico"><use href="#i-open"/></svg>Öffnen</button>
   <button class="hbtn" onclick="saveProgram()" title="Programm als .src speichern"><svg class="ico"><use href="#i-save"/></svg>Speichern</button>
   <input type="file" id="prog-file-in" accept=".src,.krl,.txt" style="display:none">
-  <div class="hright">© CAD/CAM Systeme Datentechnik Reitz · <span id="ver-header"></span></div>
+  <div class="hright">© CAD/CAM Systeme Datentechnik Reitz</div>
 </header>
 
 <nav class="toolbar">
@@ -169,14 +169,6 @@
   </div>
 </div>
 
-<!-- Startbildschirm -->
-<div id="splash-screen">
-  <div class="brand-logo" style="width:56px;height:56px"><svg class="ico" style="width:34px;height:34px"><use href="#i-robot"/></svg></div>
-  <div class="brand-name">RobSimul Simple</div>
-  <div id="ver-splash"></div>
-  <div class="progress" style="width:220px"><div id="splash-bar"></div></div>
-  <div id="splash-msg">Wird gestartet…</div>
-</div>
 <div id="parse-prog">
   <div class="bar"><div id="parse-prog-bar"></div></div>
   <div id="parse-prog-msg"></div>
@@ -184,7 +176,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261021c"></script>
-<script src="./js/simulator.js?v=20261021c"></script>
+<script src="./js/dp-solver.js?v=20261021d"></script>
+<script src="./js/simulator.js?v=20261021d"></script>
 </body>
 </html>
