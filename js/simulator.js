@@ -2098,7 +2098,18 @@ function _simAdvance(N, dt, speed, velCP, displayMmMin) {
     newT = _simIntegrate(pos, sim.t, sim.dir, dt);
     if      (newT >= N-1) { newT = N-1; pauseSim(); setStatus('end','END ✓'); }
     else if (newT <= 0)   { newT = 0;   pauseSim(); setStatus('paused','START'); }
-    else { setStatus('playing', (sim.dir>0?'▶':'◀') + '  ' + (displayMmMin??Math.round(velCP*60000)) + ' mm/min'); }
+    else {
+      // Ist-Geschwindigkeit (Bahn-mm pro echter Sekunde, geglättet) neben dem Sollwert
+      const P = parsedData.positions, D = t => { const i = Math.min(Math.floor(t), P.length - 2), f = t - i;
+        return i < 0 ? 0 : Math.hypot(P[i+1].X-P[i].X, P[i+1].Y-P[i].Y, P[i+1].Z-P[i].Z) * f; };
+      let dist = 0; const a = Math.min(sim.t, newT), b = Math.max(sim.t, newT);
+      if (Math.floor(a) === Math.floor(b)) dist = Math.abs(D(b) - D(a));
+      else { dist = (Math.hypot(P[Math.floor(a)+1].X-P[Math.floor(a)].X, P[Math.floor(a)+1].Y-P[Math.floor(a)].Y, P[Math.floor(a)+1].Z-P[Math.floor(a)].Z) - D(a)) + D(b);
+        for (let i = Math.floor(a) + 1; i < Math.floor(b); i++) dist += Math.hypot(P[i+1].X-P[i].X, P[i+1].Y-P[i].Y, P[i+1].Z-P[i].Z); }
+      if (dt > 0) sim.vIst = sim.vIst === undefined ? dist / dt : sim.vIst * 0.9 + (dist / dt) * 0.1;
+      setStatus('playing', (sim.dir>0?'▶':'◀') + '  ' + (displayMmMin??Math.round(velCP*60000)) + ' mm/min'
+        + (sim.vIst !== undefined ? ' · Ist ' + Math.round(sim.vIst * 60) : ''));
+    }
   }
   applySimT(newT);
   return true;
@@ -2106,7 +2117,8 @@ function _simAdvance(N, dt, speed, velCP, displayMmMin) {
 
 function frame(ts) {
   requestAnimationFrame(frame);
-  const dt = lastTs !== null ? Math.min((ts-lastTs)/1000, .1) : 0;
+  // Bildzeit bis 0,5 s übernehmen: auch bei wenigen Bildern/s läuft Echtzeit mit der echten Uhr
+  const dt = lastTs !== null ? Math.min((ts-lastTs)/1000, .5) : 0;
   lastTs = ts;
   const N = parsedData.positions.length;
   if (N > 0 && (sim.playing || sim.stepTarget !== null)) {
@@ -2131,6 +2143,7 @@ document.getElementById('b-stop').onclick=()=>{pauseSim();setStatus('paused','PA
 let _playAfterParse=0;
 function startPlay(dir){
   const N=parsedData.positions.length; if(!N)return;
+  sim.vIst=undefined;
   if(dir>0&&sim.t>=N-1)applySimT(0);
   if(dir<0&&sim.t<=0)applySimT(N-1);
   sim.playing=true;sim.dir=dir;sim.stepTarget=null;
