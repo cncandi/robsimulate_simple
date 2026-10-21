@@ -315,7 +315,7 @@ function parseKRL(code){
       positions.push(W({type:'CIRC',...parsePos(circM[2].slice(1,-1)),lineNum:ln,snapshot:s}));
       pushStep(ln,'move',{posIdx:pi+1,label:'CIRC'});continue;}
     // CIRC_EXTRUDE ({Hilfspunkt},{Zielpunkt},N) — Extrusionsparameter wird ignoriert
-    const circExtM=line.match(/^CIRC_EXTRUDE\s*\(\s*(\{[^}]+\})\s*,\s*(\{[^}]+\})\s*,[^)]*\)/i);
+    const circExtM=line.match(/^CIRC_EXTRUDE\s*\(\s*(\{[^}]+\})\s*,\s*(\{[^}]+\})\s*(?:,[^)]*)?\)/i);
     if(circExtM){const s=snap();const pi=positions.length;
       positions.push(W({type:'CIRC_AUX',...parsePos(circExtM[1].slice(1,-1)),lineNum:ln,snapshot:s}));
       positions.push(W({type:'CIRC',...parsePos(circExtM[2].slice(1,-1)),lineNum:ln,snapshot:s}));
@@ -343,7 +343,7 @@ function parseKRL(code){
       positions.push(W({type:moveType,...parsedMove,lineNum:ln,velCP:_velCP,snapshot:snap()}));
       pushStep(ln,'move',{posIdx:pi,label:moveType});continue;}
     // LIN_EXTRUDE({X ...},N) — Extrusionsparameter wird ignoriert
-    const linExtM=line.match(/^LIN_EXTRUDE\s*\(\s*\{([^}]+)\}\s*,[^)]*\)/i);
+    const linExtM=line.match(/^LIN_EXTRUDE\s*\(\s*\{([^}]+)\}\s*(?:,[^)]*)?\)/i);
     if(linExtM){const pi=positions.length;
       positions.push(W({type:'LIN',...parsePos(linExtM[1]),lineNum:ln,velCP:_velCP,snapshot:snap()}));
       pushStep(ln,'move',{posIdx:pi,label:'LIN'});continue;}
@@ -1898,7 +1898,6 @@ var _aPlotReachMid    = null;  // [{ok:[bool,…]}] pro Mittelpunkt
 var _aPlotReachAngles = null;  // [[angles|null,…]] IK-Lösung pro Wegpunkt × A-Step
 var _aPlotReachSing   = null;  // [[types[],…]] Singularitätstypen pro Wegpunkt × A-Step
 var _aPlotReachScanId = 0;
-var _aPlotAutoInserts = []; // [{afterIdx, X,Y,Z,A,B,C}] eingefügte Hilfspunkte
 var _aPlotDragIdx  = -1;
 var _aPlotML = 56, _aPlotMT = 14;
 var _aPlotAMIN = -360, _aPlotAMAX = 360;
@@ -2462,7 +2461,6 @@ function aPlotAutoSolve() {
 
   // ── Ergebnis extrahieren ──────────────────────────────
   _aPlotEdits = {};
-  _aPlotAutoInserts = [];
 
   for (let k = 0; k < M; k++) {
     var nd = nodes[k];
@@ -2475,75 +2473,52 @@ function aPlotAutoSolve() {
 
   var hint = document.getElementById('aplot-edit-hint');
   if (hint) hint.style.display = '';
-  var insStr = _aPlotAutoInserts.length ? '  +' + _aPlotAutoInserts.length + ' Hilfspunkt(e)' : '';
   if (infoEl) infoEl.textContent =
-    '⚡ Auto-Lösung: Δ' + bestCost.toFixed(0) + '°' + insStr + ' — Übernehmen zum Anwenden';
+    '⚡ Auto-Lösung: Δ' + bestCost.toFixed(0) + '° — Übernehmen zum Anwenden';
   aPlotDraw();
 }
 
 function aPlotReset() {
   _aPlotEdits = {};
-  _aPlotAutoInserts = [];
   var hint = document.getElementById('aplot-edit-hint');
   if (hint) hint.style.display = 'none';
   aPlotDraw();
 }
 
 function aPlotApply() {
-  var pos = (parsedData && parsedData.positions) ? parsedData.positions : [];
-  var hasEdits   = Object.keys(_aPlotEdits).length > 0;
-  var hasInserts = _aPlotAutoInserts && _aPlotAutoInserts.length > 0;
-  if (!pos.length || (!hasEdits && !hasInserts)) return;
+  var pos = parsedData.positions;
+  if (!pos.length || !Object.keys(_aPlotEdits).length) return;
   var code = document.getElementById('code-input');
-  if (!code) return;
-  var nl = '\n';
-  var lines = code.value.split(nl);
+  var lines = code.value.split('\n');
 
-  // ── 1. A-Werte an bestehenden Wegpunkten ändern ───────
-  // Baue Index: Wegpunkt[i] → Zeilennummer (nur LIN/CIRC/SLIN/PTP)
-  var wpLineMap = {};
-  var linCount = 0;
-  for (let li = 0; li < lines.length; li++) {
-    if (lines[li].match(/^\s*(LIN|SLIN|CIRC)\s*[{]/i)) {
-      wpLineMap[linCount] = li;
-      linCount++;
-    }
+  // A-Wert in der n-ten Koordinatengruppe {…} einer Zeile ersetzen; false wenn die Gruppe fehlt
+  function setA(li, groupIdx, newA) {
+    var n = -1, done = false;
+    lines[li] = lines[li].replace(/\{[^}]*\}/g, function(g) {
+      if (++n !== groupIdx) return g;
+      done = true;
+      return g.replace(/\bA\s*[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?/, 'A ' + newA.toFixed(3));
+    });
+    return done;
   }
+
+  // Jeder Punkt kennt seine Programmzeile (lineNum). LIN, LIN_EXTRUDE, SLIN, PTP: 1. Gruppe;
+  // CIRC/CIRC_EXTRUDE: Hilfspunkt = 1. Gruppe, Zielpunkt = 2. Gruppe bzw. Folgezeile "{…}"
   Object.keys(_aPlotEdits).forEach(function(idxStr) {
-    var idx = parseInt(idxStr);
-    var newA = _aPlotEdits[idx];
-    var li = wpLineMap[idx];
-    if (li === undefined) return;
-    lines[li] = lines[li].replace(/,\s*A\s*([\-\d\.]+)/, ', A ' + newA.toFixed(3));
+    var p = pos[+idxStr], newA = _aPlotEdits[idxStr];
+    if (!p || p.lineNum === undefined) return;
+    if (p.type !== 'CIRC') { setA(p.lineNum, 0, newA); return; }
+    if (setA(p.lineNum, 1, newA)) return;
+    for (var li = p.lineNum + 1; li < Math.min(p.lineNum + 3, lines.length); li++) {
+      if (/^\s*\{/.test(lines[li])) { setA(li, 0, newA); return; }
+    }
   });
 
-  // ── 2. Hilfspunkte einfügen (rückwärts, damit Indizes stabil bleiben) ──
-  if (hasInserts) {
-    // Sortieren: höchster afterWpIdx zuerst
-    var inserts = _aPlotAutoInserts.slice().sort(function(a,b){ return b.afterWpIdx !== a.afterWpIdx ? b.afterWpIdx-a.afterWpIdx : b.subIdx-a.subIdx; });
-    inserts.forEach(function(ins) {
-      var li = wpLineMap[ins.afterWpIdx];
-      if (li === undefined) return;
-      // Verschleifung vom Originalpunkt übernehmen
-      var origLine = lines[li] || '';
-      var verlM = origLine.match(/(C_DIS|C_PTP|C_VEL|C_ORI)\s*$/);
-      var verl = verlM ? ' ' + verlM[1] : ' C_DIS';
-      var hlp = 'LIN {X ' + ins.X.toFixed(3) + ', Y ' + ins.Y.toFixed(3) +
-                ', Z ' + ins.Z.toFixed(3) + ', A ' + ins.A.toFixed(3) +
-                ', B ' + ins.B.toFixed(3) + ', C ' + ins.C.toFixed(3) + '}' + verl +
-                '  ; AUTO-HILFSPUNKT';
-      lines.splice(li + 1, 0, hlp);
-    });
-  }
-
-  code.value = lines.join(nl);
+  code.value = lines.join('\n');
   _aPlotEdits = {};
-  _aPlotAutoInserts = [];
-  var hint = document.getElementById('aplot-edit-hint');
-  if (hint) hint.style.display = 'none';
-  var info = document.getElementById('aplot-info');
+  document.getElementById('aplot-edit-hint').style.display = 'none';
   parseAndLoad();
-  if (info) info.textContent = '✓ Übernommen';
+  document.getElementById('aplot-info').textContent = '✓ Übernommen';
 }
 
 // Drag-Handler fuer aplot-panel
