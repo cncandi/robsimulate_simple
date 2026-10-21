@@ -992,6 +992,12 @@ function applyBase() {
   buildScene(parsedData.positions);
   orbitTarget.copy(savedT); orbitState.radius = savedR; updateCamera();
   aPlotInvalidate();
+  // Achsstellungen passen nicht mehr zur verschobenen Bahn: Hinweis ausblenden und
+  // nach kurzer Eingabepause automatisch neu rechnen (vorher erst mit F9)
+  var w = document.getElementById('sim-warn'); if (w) w.style.display = 'none';
+  setStatus('paused', 'BASE geändert…');
+  clearTimeout(applyBase._t);
+  applyBase._t = setTimeout(function() { if (!_ikPending) parseAndLoad(); }, 700);
 }
 
 // Mausrad auf Zahlenfeldern (wie RobSimul): Wert um Schrittweite aendern
