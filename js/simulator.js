@@ -1137,9 +1137,28 @@ async function loadLibRobot(robot) {
     setStatus('paused', 'Roboter nicht geladen: ' + e.message);
   }
 }
+// ── Programmformat (KUKA / ABB / FANUC / APT) ──
+let progFmt = 'kuka';
+try { const f = localStorage.getItem('robsimSimple.fmt'); if (f && PROG_FORMATS[f]) progFmt = f; } catch(e) {}
+function _showFmt() {
+  const s = document.getElementById('prog-fmt'); if (s) s.value = progFmt;
+  const l = document.getElementById('fmt-label'); if (l) l.textContent = PROG_FORMATS[progFmt].label;
+  try { localStorage.setItem('robsimSimple.fmt', progFmt); } catch(e) {}
+}
+// Umschalten: geparstes, unverändertes Programm wird ins neue Format umgewandelt (wie in RobSimul);
+// eingefügter/geänderter Code bleibt stehen und wird beim nächsten Parsen im neuen Format gelesen.
+function setProgramFormat(fmt) {
+  if (!PROG_FORMATS[fmt] || fmt === progFmt) { _showFmt(); return; }
+  const convert = !_progDirty() && !_ikPending && parsedData.positions.length > 0;
+  const from = progFmt; progFmt = fmt; _showFmt();
+  if (!convert) { setStatus('paused', 'Format ' + PROG_FORMATS[fmt].label + ' – Programm mit F9 parsen'); return; }
+  _codeEl.value = generateProgram(fmt, parsedData);
+  rebuildGutter(); parseAndLoad();
+  setStatus('paused', PROG_FORMATS[from].label + ' → ' + PROG_FORMATS[fmt].label + ' umgewandelt');
+}
 function saveProgram() {
   var code = document.getElementById('code-input').value;
-  downloadFile(code, 'programm.src');
+  downloadFile(code, 'programm.' + PROG_FORMATS[progFmt].ext);
 }
 
 function loadProgram() {
@@ -1150,7 +1169,10 @@ function loadProgram() {
     reader.onload = ev => {
       document.getElementById('code-input').value = ev.target.result;
       rebuildGutter();
-      setStatus('paused', 'Programm geladen: ' + file.name);
+      const det = detectProgramFormat(ev.target.result, file.name);
+      if (det) { progFmt = det; _showFmt(); }
+      if (typeof _updateDirtyUI === 'function') _updateDirtyUI();
+      setStatus('paused', 'Programm geladen: ' + file.name + ' (' + PROG_FORMATS[progFmt].label + ') – F9 parsen');
     };
     reader.readAsText(file);
     inp.value = '';
@@ -2376,7 +2398,8 @@ function parseAndLoad(){
   _parsedCode=code; _ikPending=true;
   if(applyBase._t){ clearTimeout(applyBase._t); applyBase._pending=false; }
   if(typeof _updateDirtyUI==='function')_updateDirtyUI();
-  parsedData=parseKRL(code);const N=parsedData.positions.length;
+  {const det=detectProgramFormat(code); if(det&&det!==progFmt){progFmt=det;_showFmt();}}
+  parsedData=parseProgram(progFmt,code);const N=parsedData.positions.length;
   // Schnellzugriff: Positionsindex -> Programmschritt
   parsedData.stepOfPos=new Int32Array(N).fill(-1);
   parsedData.steps.forEach((s,i)=>{if(s.type==='move'&&parsedData.stepOfPos[s.posIdx]<0)parsedData.stepOfPos[s.posIdx]=i;});
@@ -3085,6 +3108,18 @@ function aPlotApply() {
   }
   var nEd = Object.keys(_aPlotEdits).length;
   if (!nEd) { aPlotMsg('Programm entspricht bereits der Linie'); return; }
+  // ABB/FANUC: Programm mit neuen A-Werten neu schreiben; APT kennt keinen A-Wert → als KUKA-Programm ausgeben
+  if (progFmt !== 'kuka') {
+    Object.keys(_aPlotEdits).forEach(function(i) { var q = pos[+i]; (q.rel || q).A = _aPlotEdits[i]; });
+    var target = progFmt === 'apt' ? 'kuka' : progFmt;
+    _codeEl.value = generateProgram(target, parsedData);
+    progFmt = target; _showFmt(); rebuildGutter();
+    _aPlotEdits = {};
+    document.getElementById('aplot-edit-hint').style.display = 'none';
+    parseAndLoad();
+    aPlotMsg('Übernommen: ' + nEd + ' A-Werte, Programm als ' + PROG_FORMATS[target].label + ' neu geschrieben');
+    return;
+  }
   var code = document.getElementById('code-input');
   var lines = code.value.split('\n');
   // A-Wert in der n-ten Koordinatengruppe {…} einer Zeile ersetzen; false wenn die Gruppe fehlt
@@ -3220,6 +3255,7 @@ function aPlotLivePreview(idx, newA) {
   });
 })();
 
+_showFmt();
 parseAndLoad();
 
 window.addEventListener('load', function() {

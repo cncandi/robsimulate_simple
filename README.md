@@ -5,7 +5,7 @@ Live: https://cnc-technik.de/robsimul/simple/
 
 ## Funktionsumfang
 - Robotermodell aus der RobLib-Bibliothek wählen (Kinematik, Achs-STLs, Podest, Werkzeug, TCP/BASE-Daten)
-- KUKA-KRL-Programm bearbeiten, als .src öffnen/speichern, parsen (F9)
+- Programme in KUKA KRL, ABB RAPID, FANUC TP oder APT CL-Data bearbeiten, öffnen/speichern, parsen (F9); Format im Editorkopf umschaltbar
 - Simulation: Play vor/zurück, Einzelschritt, Anfang/Ende, Geschwindigkeit, Echtzeit, Positionsregler
 - Robot Map (A): Karte der A-Werte entlang der Bahn (links Beginn, rechts Ende) mit Feldern für unerreichbar,
   Achsgrenze und Singularität. Achsstellungen laufen stetig entlang der Bahn, Achsgrenzen (z. B. A6 ±180°) erscheinen dort,
@@ -21,6 +21,7 @@ Live: https://cnc-technik.de/robsimul/simple/
 - `index.html` – Oberfläche
 - `css/simulator.css` – Styles
 - `js/simulator.js` – Kinematik, IK, KRL-Parser, Simulation, A-Plot
+- `js/formats.js` – Parser und Generatoren ABB, FANUC, APT
 - `js/dp-solver.js` – globaler IK-Pfadplaner
 
 Die Rechenkerne (FK/IK, Trajektorie, DP-Planer, Reachability-Scan) sind unverändert aus RobSimul übernommen;

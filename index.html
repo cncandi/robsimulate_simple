@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261022e">
+<link rel="stylesheet" href="./css/simulator.css?v=20261022f">
 </head>
 <body>
 
@@ -49,7 +49,7 @@
   <button class="hbtn" onclick="openLibPickerModal()" title="Robotermodell aus der Bibliothek wählen"><svg class="ico"><use href="#i-robot"/></svg>Roboter wählen</button>
   <button class="hbtn" onclick="loadProgram()" title="KRL-Datei (.src) öffnen"><svg class="ico"><use href="#i-open"/></svg>Öffnen</button>
   <button class="hbtn" onclick="saveProgram()" title="Programm als .src speichern"><svg class="ico"><use href="#i-save"/></svg>Speichern</button>
-  <input type="file" id="prog-file-in" accept=".src,.krl,.txt" style="display:none">
+  <input type="file" id="prog-file-in" accept=".src,.krl,.dat,.mod,.prg,.modx,.ls,.apt,.cl,.cls,.aptsource,.clt,.txt" style="display:none">
   <div class="hright">© CAD/CAM Systeme Datentechnik Reitz</div>
 </header>
 
@@ -81,7 +81,7 @@
 <div class="main">
   <!-- Programm -->
   <aside class="panel ep">
-    <div class="sec-title">Programm <small>KUKA KRL</small></div>
+    <div class="sec-title">Programm <select id="prog-fmt" class="fmt-sel" onchange="setProgramFormat(this.value)" title="Programmformat: Umschalten wandelt ein geparstes Programm um; eingefügter, noch nicht geparster Code wird mit dem gewählten Format gelesen"><option value="kuka">KUKA KRL</option><option value="abb">ABB RAPID</option><option value="fanuc">FANUC TP</option><option value="apt">APT CL-Data</option></select></div>
     <div class="ew">
       <div id="gutter"></div>
       <div id="code-hl"></div>
@@ -165,7 +165,7 @@
 
 <footer class="statusbar">
   <span>Roboter: <b id="simple-robot-name">Standardmodell</b></span>
-  <span>Format: <b>KUKA KRL</b></span>
+  <span>Format: <b id="fmt-label">KUKA KRL</b></span>
   <span class="sb-right"><span class="dot"></span>Bereit</span>
 </footer>
 
@@ -237,7 +237,8 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261022e"></script>
-<script src="./js/simulator.js?v=20261022e"></script>
+<script src="./js/dp-solver.js?v=20261022f"></script>
+<script src="./js/formats.js?v=20261022f"></script>
+<script src="./js/simulator.js?v=20261022f"></script>
 </body>
 </html>

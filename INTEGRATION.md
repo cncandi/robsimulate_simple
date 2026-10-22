@@ -11,9 +11,10 @@ Reine Browser-Anwendung ohne Build-Schritt und ohne Server-Logik. Vier Dateien, 
 | `index.html` | Oberfläche, SVG-Symbole, Dialoge (18 KB) |
 | `css/simulator.css` | Gestaltung (16 KB) |
 | `js/simulator.js` | Kinematik, IK, KRL-Parser, Simulation, Robot Map, Bedienung (159 KB) |
+| `js/formats.js` | Parser/Generatoren ABB RAPID, FANUC TP, APT CL-Data |
 | `js/dp-solver.js` | globaler IK-Pfadplaner für Programme bis 150 Punkte (9 KB) |
 
-Funktionen: Roboter aus der RobLib-Bibliothek, KUKA-KRL-Simulation, BASE-Verwaltung, Robot Map
+Funktionen: Roboter aus der RobLib-Bibliothek, Simulation von KUKA KRL, ABB RAPID, FANUC TP und APT, BASE-Verwaltung, Robot Map
 (A-Winkel-Karte mit Achsgrenzen, Singularitäten, Kollision, grüner Weglinie, Verifikation),
 Editor mit Zeilenkopplung, G-Code-Anzeige Alle/Bis Position/Aus.
 
@@ -86,7 +87,11 @@ Alle Winkel in Grad, Längen in mm. `t` = Satzposition 0 … N−1 (Kommazahl = 
 | `ikTable[i].angles` | Achswerte A1–A6 je Satz (stetig fortgeführt; mit `_aNormQ(q)` auf die Achsgrenzen zurückführen) |
 | `ikTable[i].ok` | IK-Lösung innerhalb der Achsgrenzen gefunden |
 | `_ikJumps` | Liste der Achssprünge `{i, axis, deg}` (Achsgrenze erreicht) |
-| `saveProgram()` | Programm als `programm.src` herunterladen |
+| `saveProgram()` | Programm herunterladen (Endung je Format: .src/.mod/.ls/.apt) |
+| `setProgramFormat('kuka'|'abb'|'fanuc'|'apt')` | Format wählen; geparstes, unverändertes Programm wird umgerechnet |
+| `detectProgramFormat(text, dateiname)` | Format erkennen |
+| `generateProgram(fmt, parsedData, name)` | Programmtext in einem Format erzeugen |
+| `progFmt` | aktuelles Format |
 
 ### Roboter
 | Aufruf | Wirkung |
@@ -131,6 +136,12 @@ Daten: `$TOOL=TOOL_DATA[n]`, `$BASE=BASE_DATA[n]`, `$VEL.CP`, `$VEL.PTP`, `$ACC.
 `$OUT[n]=…`, `$IN[n]`, `$ANOUT[n]=…`, `$ANIN[n]`, `WAIT SEC`, `WAIT FOR`, `HALT`, `BRAKE`, `DECL`/Zuweisungen.
 Nicht ausgewertet: Steuerstrukturen (IF/LOOP/FOR …), Unterprogramme, Interrupts, eigene Befehle wie `SET_TCP_SPEED`.
 
+### Weitere Formate (js/formats.js)
+- **ABB RAPID**: `MoveL/MoveJ/MoveC/MoveAbsJ`, benannte und eingebettete robtargets, `Offs()`, speeddata (`vNNN`, eigene), `toolN`, `\WObj:=wobjN`, `SetDO`, `WaitDI`, `WaitTime`, `Stop`. Quaternion → A,B,C.
+- **FANUC TP (.ls)**: `/POS`-Abschnitt (UF, UT, X…R oder J1…J6), `J/L/C P[n]` mit mm/sec, cm/min, inch/min, %; `UTOOL_NUM`, `UFRAME_NUM`, `DO[]`, `WAIT DI[]`, `WAIT sec`, `PAUSE`. W,P,R → C,B,A.
+- **APT CL-Data**: `GOTO` (mit Werkzeugachse i,j,k), `FROM`, `RAPID`, `FEDRAT` (MMPM/IPM), `CIRCLE`, `LOADTL`, `TLAXIS`, `UNITS`. Koordinaten = BASE 1. APT hat keine Drehung um die Werkzeugachse → A = 0, mit der Robot Map optimieren; „Übernehmen“ schreibt dann KUKA.
+- Umschalten des Formats erzeugt das Programm neu: Kommentare und nicht ausgewertete Zeilen gehen dabei verloren.
+
 ## 6. Roboterformat (RobLib-ZIP)
 
 ZIP mit einer JSON-Datei und STL-Dateien (`a1.stl` … `a6.stl`, `podest.stl`, `tool1_tcp.stl`):
@@ -155,6 +166,7 @@ Bibliotheksliste: `GET …/roblib/api.php?action=list` → `{ok, count, robots:[
 |---|---|
 | `robsimSimple.robot` | zuletzt gewählter Roboter `{name, zip_url}` oder `{name:'default'}` |
 | `robsimSimple.ui` | ausgeblendete Bereiche |
+| `robsimSimple.fmt` | gewähltes Programmformat |
 
 Kein Server-Speicher, keine Cookies, keine Anmeldung.
 

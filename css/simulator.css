@@ -222,3 +222,8 @@ input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;bac
 .sec-title.fold.collapsed .chev{transform:rotate(-90deg)}
 .sec-body{display:flex;flex-direction:column;gap:10px}
 .sec-body.collapsed{display:none}
+
+/* Programmformat-Auswahl im Editorkopf */
+.fmt-sel{background:var(--bg-card);color:var(--txt2);border:1px solid var(--bdr-strong);border-radius:3px;
+  font-family:var(--mono);font-size:11px;height:22px;padding:0 4px;cursor:pointer}
+.fmt-sel:hover{border-color:var(--blue-bdr);color:var(--txt)}
