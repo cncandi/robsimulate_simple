@@ -786,7 +786,7 @@ function applyKinematicData(data, stlBuffers) {
     var t = data.tcp;
     tcpList = [{ x:t.x||0, y:t.y||0, z:t.z||0, a:t.a||0, b:t.b||0, c:t.c||0, name:'TCP 1' }];
   }
-  _applyToolToTCPDEF(1);
+  _applyToolToTCPDEF(1); tcpNavTo(0);
   buildPivotChain();
   buildRobotModel(jointAngles);
   setStatus('paused', 'Kinematik geladen');
@@ -809,7 +809,7 @@ function toggleSection(name, force){
   body.classList.toggle('collapsed',col); if(head) head.classList.toggle('collapsed',col);
   _uiSave('col_'+name,col);
 }
-(function(){ const s=_uiState(); if(s.rightClosed) toggleRightPanel(true); if(s.col_sim) toggleSection('sim',true); if(s.col_base) toggleSection('base',true); })();
+(function(){ const s=_uiState(); if(s.rightClosed) toggleRightPanel(true); if(s.col_sim) toggleSection('sim',true); if(s.col_base) toggleSection('base',true); if(s.col_tcp) toggleSection('tcp',true); })();
 
 function toggleLeftPanel() {
   const ep = document.querySelector('.ep');
@@ -1031,6 +1031,68 @@ function applyBase() {
   applyBase._t = setTimeout(function() { applyBase._pending = false; parseAndLoad(); }, 700);
 }
 
+// ── TCP bearbeiten (wie RobSimul): TOOL_DATA[n] = tcpList[n-1] ──────────────────
+// Werkzeuge, die das Programm selbst definiert (ABB tooldata, KRL TOOL_DATA[n]={…}), haben Vorrang.
+var tcpNavIdx = 0;
+function tcpSetInputs(t) {
+  ['x','y','z','a','b','c'].forEach(function(k) { var el = document.getElementById('tcp-' + k); if (el) el.value = t && t[k] !== undefined ? +(+t[k]).toFixed(4) : 0; });
+}
+function renderTcpNav() {
+  var n = tcpList.length, i = tcpNavIdx, e = tcpList[i];
+  var lbl = document.getElementById('tcp-nav-label'); if (!lbl) return;
+  lbl.textContent = n ? (i+1) + ' / ' + n + (e && e.name ? ' · ' + e.name : '') : '—';
+  var dis = function(id, d) { var b = document.getElementById(id); if (b) b.disabled = d; };
+  dis('tcp-nav-first', i<=0||!n); dis('tcp-nav-prev', i<=0||!n); dis('tcp-nav-next', i>=n-1); dis('tcp-nav-last', i>=n-1); dis('tcp-nav-del', n<=1);
+  var nm = document.getElementById('tcp-name'); if (nm && document.activeElement !== nm) nm.value = e ? e.name || '' : '';
+  // Hinweis auf Werkzeuge aus dem Programm
+  var h = document.getElementById('tcp-prog'), pt = parsedData && parsedData.tools, keys = pt ? Object.keys(pt) : [];
+  if (h) {
+    var used = {}; (parsedData.positions || []).forEach(function(p) { used[p.toolN || 1] = 1; });
+    var own = keys.filter(function(k) { return used[k]; });
+    var robot = Object.keys(used).filter(function(k) { return !(pt && pt[k]); })
+      .map(function(k) { return tcpList[k - 1] ? k + ' = ' + (tcpList[k - 1].name || 'TCP ' + k) : k + ' (fehlt → Eintrag 1)'; });
+    var f = function(v) { return (Math.round((v || 0) * 10) / 10).toString(); };
+    h.innerHTML = own.length ? 'Im Programm definiert (hat Vorrang):<br>' + own.map(function(k) { var t = pt[k];
+        return '<b>' + (t.name || k) + '</b> X ' + f(t.x) + ' Y ' + f(t.y) + ' Z ' + f(t.z) + ' · A ' + f(t.a) + ' B ' + f(t.b) + ' C ' + f(t.c); }).join('<br>')
+      + (robot.length ? '<br>Aus dieser Liste: TOOL ' + robot.join(', ') : '') : (robot.length ? 'Programm verwendet TOOL ' + robot.join(', ') + ' aus dieser Liste.' : '');
+    h.style.display = h.innerHTML ? '' : 'none';
+  }
+}
+function tcpNavTo(idx) {
+  if (!tcpList.length) tcpList.push({ x:0, y:0, z:0, a:0, b:0, c:0, name:'TCP 1' });
+  tcpNavIdx = Math.max(0, Math.min(idx, tcpList.length - 1));
+  var e = tcpList[tcpNavIdx]; if (!e.name) e.name = 'TCP ' + (tcpNavIdx + 1);
+  tcpSetInputs(e); renderTcpNav();
+}
+function tcpAddCurrent() {
+  var c = tcpList[tcpNavIdx] || {};
+  tcpList.push({ x:c.x||0, y:c.y||0, z:c.z||0, a:c.a||0, b:c.b||0, c:c.c||0, name:'TCP ' + (tcpList.length + 1) });
+  tcpNavTo(tcpList.length - 1);
+}
+function tcpDelCurrent() {
+  if (tcpList.length <= 1) return;
+  tcpList.splice(tcpNavIdx, 1); tcpNavTo(Math.min(tcpNavIdx, tcpList.length - 1)); applyTCP();
+}
+function tcpNameChanged(val) { if (tcpList[tcpNavIdx]) { tcpList[tcpNavIdx].name = val; renderTcpNav(); } }
+function updateTCPDef() {
+  var e = tcpList[tcpNavIdx]; if (!e) return;
+  ['x','y','z','a','b','c'].forEach(function(k) { e[k] = parseFloat(document.getElementById('tcp-' + k).value) || 0; });
+  applyTCP();
+}
+// TCP geändert: Roboter sofort mit neuem TCP zeigen, Stellungen nach kurzer Eingabepause neu rechnen
+function applyTCP() {
+  var cur = (parsedData.positions && parsedData.positions.length && typeof sim !== 'undefined')
+    ? parsedData.positions[Math.min(parsedData.positions.length - 1, Math.max(0, Math.round(sim.t)))] : null;
+  _applyToolToTCPDEF(cur ? cur.toolN : 1);
+  buildRobotModel(jointAngles);
+  if (!parsedData.positions.length) return;
+  var w = document.getElementById('sim-warn'); if (w) w.style.display = 'none';
+  setStatus('paused', 'TCP geändert…');
+  clearTimeout(applyBase._t);
+  applyBase._pending = true;
+  applyBase._t = setTimeout(function() { applyBase._pending = false; parseAndLoad(); }, 700);
+}
+
 // Mausrad auf Zahlenfeldern (wie RobSimul): Wert um Schrittweite aendern
 (function() {
   var hovered = null;
@@ -1102,7 +1164,7 @@ function resetDefaultRobot() {
   if (window._axisExtraMeshes) { Object.values(window._axisExtraMeshes).forEach(function(l) { l.forEach(_removeMesh); }); window._axisExtraMeshes = {}; }
   _removeMesh(pedestalMesh); pedestalMesh = null; _removeMesh(toolMesh); toolMesh = null;
   tcpList = JSON.parse(JSON.stringify(_DEFAULT_ROBOT.tcpList));
-  _applyToolToTCPDEF(1);
+  _applyToolToTCPDEF(1); tcpNavTo(0);
   buildPivotChain(); buildRobotModel(jointAngles);
   _currentRobotName = 'Standardmodell';
   document.getElementById('simple-robot-name').textContent = 'Standardmodell';
@@ -2416,6 +2478,7 @@ function parseAndLoad(){
   parsedData.steps.forEach((s,i)=>{if(s.type==='move'&&parsedData.stepOfPos[s.posIdx]<0)parsedData.stepOfPos[s.posIdx]=i;});
   _gutActive=-1;
   ensureBasesForProgram(); // Eintraege fuer alle referenzierten BASE_DATA[n] sicherstellen
+  renderTcpNav(); renderBaseNav();
   bakeBaseOffset(); // Code-Koordinaten + jeweils aktiver BASE-Offset pro Punkt -> Welt
   const _nLines=code.split(/\r?\n/).length;
   buildGutter(_nLines);
@@ -2452,7 +2515,7 @@ document.getElementById('parse-btn').addEventListener('click',function(){
 // INIT
 // ═══════════════════════════════════════════════════
 buildRobotModel([0,-90,90,0,0,0]);
-baseNavTo(0);
+baseNavTo(0); tcpNavTo(0);
 document.getElementById('code-input').value=`$BASE = BASE_DATA[1]
 $TOOL=TOOL_DATA[24]
 $advance=5

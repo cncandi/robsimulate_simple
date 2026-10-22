@@ -109,6 +109,15 @@ Alle Winkel in Grad, Längen in mm. `t` = Satzposition 0 … N−1 (Kommazahl = 
 | `baseNavTo(n)` | BASE n in der Eingabe anzeigen |
 | `applyBase()` | Bahn sofort verschieben, IK 0,7 s später automatisch neu |
 
+### TCP (Werkzeuge des Roboters)
+| Aufruf | Wirkung |
+|---|---|
+| `tcpList[n] = {x,y,z,a,b,c,name}` | TOOL_DATA[n+1], bezogen auf den Flansch |
+| `tcpNavTo(n)` | TCP n in der Eingabe anzeigen |
+| `applyTCP()` | Roboter sofort mit neuem TCP, IK 0,7 s später automatisch neu |
+
+Im Programm definierte Werkzeuge (`parsedData.tools`) haben Vorrang vor `tcpList`.
+
 ### Teilposition
 | Aufruf | Wirkung |
 |---|---|

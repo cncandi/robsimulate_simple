@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261022h">
+<link rel="stylesheet" href="./css/simulator.css?v=20261022i">
 </head>
 <body>
 
@@ -163,6 +163,33 @@
       <div id="plc-box" class="plc-box" style="display:none"></div>
     </div>
     </div>
+
+    <div class="sec-title fold" style="margin-top:6px" onclick="toggleSection('tcp')" title="Abschnitt ein/ausklappen"><span><i class="chev">▾</i>TCP</span><small>TOOL_DATA[n]</small></div>
+    <div class="sec-body" id="sec-tcp">
+    <div class="card">
+      <div class="row" style="align-items:center;margin-bottom:8px">
+        <button class="btn icon" id="tcp-nav-first" onclick="tcpNavTo(0)" title="Erster TCP"><svg class="ico"><use href="#i-first"/></svg></button>
+        <button class="btn icon" id="tcp-nav-prev" onclick="tcpNavTo(tcpNavIdx-1)" title="Vorheriger TCP"><svg class="ico"><use href="#i-left"/></svg></button>
+        <span class="nav-lbl" id="tcp-nav-label">—</span>
+        <button class="btn icon" id="tcp-nav-next" onclick="tcpNavTo(tcpNavIdx+1)" title="Nächster TCP"><svg class="ico"><use href="#i-right"/></svg></button>
+        <button class="btn icon" id="tcp-nav-last" onclick="tcpNavTo(tcpList.length-1)" title="Letzter TCP"><svg class="ico"><use href="#i-last"/></svg></button>
+        <button class="btn icon primary" onclick="tcpAddCurrent()" title="TCP hinzufügen (Kopie des aktuellen)">+</button>
+        <button class="btn icon danger" id="tcp-nav-del" onclick="tcpDelCurrent()" title="TCP löschen">✕</button>
+      </div>
+      <input class="inp" id="tcp-name" type="text" placeholder="Name" oninput="tcpNameChanged(this.value)">
+      <div class="lbl" style="margin:10px 0 6px">Position [mm] / Orientierung [°] vom Flansch</div>
+      <div class="grid6">
+        <span>X</span><input class="inp" id="tcp-x" type="number" value="0" step="1" oninput="updateTCPDef()"><span>mm</span>
+        <span>A(Z)</span><input class="inp" id="tcp-a" type="number" value="0" step="1" oninput="updateTCPDef()"><span>°</span>
+        <span>Y</span><input class="inp" id="tcp-y" type="number" value="0" step="1" oninput="updateTCPDef()"><span>mm</span>
+        <span>B(Y)</span><input class="inp" id="tcp-b" type="number" value="0" step="1" oninput="updateTCPDef()"><span>°</span>
+        <span>Z</span><input class="inp" id="tcp-z" type="number" value="0" step="1" oninput="updateTCPDef()"><span>mm</span>
+        <span>C(X)</span><input class="inp" id="tcp-c" type="number" value="0" step="1" oninput="updateTCPDef()"><span>°</span>
+      </div>
+      <div class="hint" id="tcp-prog" style="margin-top:8px;display:none"></div>
+      <div class="hint" style="margin-top:8px">TOOL n im Programm = Eintrag n. Die Roboterstellung wird nach einer Änderung kurz danach automatisch neu berechnet.</div>
+    </div>
+    </div>
   </aside>
 </div>
 
@@ -241,9 +268,9 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261022h"></script>
-<script src="./js/formats.js?v=20261022h"></script>
-<script src="./js/simulator.js?v=20261022h"></script>
-<script src="./js/placement.js?v=20261022h"></script>
+<script src="./js/dp-solver.js?v=20261022i"></script>
+<script src="./js/formats.js?v=20261022i"></script>
+<script src="./js/simulator.js?v=20261022i"></script>
+<script src="./js/placement.js?v=20261022i"></script>
 </body>
 </html>
