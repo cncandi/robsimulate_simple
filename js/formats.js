@@ -121,7 +121,7 @@ function _abbStmts(text) {
   return out;
 }
 function parseABB(text, files) {
-  const P = _progBuilder(), targets = {}, speeds = {}, strs = {}, missing = [], modNames = [];
+  const P = _progBuilder(), targets = {}, speeds = {}, strs = {}, missing = [], modNames = [], loads = [];
   files = files || progFiles || {};
   // Module: Hauptprogramm (Editor) + übergebene Dateien
   const mods = [{ file: '', main: true, stmts: _abbStmts(text) }]
@@ -263,7 +263,8 @@ function parseABB(text, files) {
         const nm = /^%\s*"/.test(s) ? m[1] : strs[m[1].toLowerCase()];
         if (nm) { r = call(nm, ctx, ln); if (r === 'exit') return r; } else P.other(s, ln); continue; }
       if ((m = s.match(/^CallByVar\s+"(\w+)"\s*,\s*(\d+)/i))) { r = call(m[1] + m[2], ctx, ln); if (r === 'exit') return r; continue; }
-      if (/^(Load|StartLoad|WaitLoad|Unload|EraseModule|CancelLoad)\b/i.test(s)) continue;
+      if (/^(Load|StartLoad)\b/i.test(s)) { const f = s.match(/File\s*:=\s*"([^"]+)"/i) || s.match(/"([^"]+\.\w+)"/); if (f && loads.indexOf(f[1]) < 0) loads.push(f[1]); continue; }
+      if (/^(WaitLoad|Unload|EraseModule|CancelLoad)\b/i.test(s)) continue;
       if (/^(MODULE|ENDMODULE)\b/i.test(s) || new RegExp(DECL).test(s)) continue;
       if ((m = s.match(/^(\w+)(?:\s+(?!:=).*)?$/)) && (procs[ctx.mod.name.toLowerCase() + ':' + m[1].toLowerCase()] || byName[m[1].toLowerCase()])) {
         r = call(m[1], ctx, ln); if (r === 'exit') return r; continue; }
@@ -273,7 +274,7 @@ function parseABB(text, files) {
   // Einstieg: PROC main des Hauptprogramms, sonst erste PROC, sonst alle Anweisungen
   const M = mods[0], entry = procs[M.name.toLowerCase() + ':main'] || Object.values(procs).find(p => p.mod === M && p.name);
   run(entry ? entry.stmts : M.stmts, { mod: M, depth: 0 });
-  const res = P.result(); res.missing = missing; res.modules = modNames;
+  const res = P.result(); res.missing = missing; res.modules = modNames; res.loads = loads;
   return res;
 }
 

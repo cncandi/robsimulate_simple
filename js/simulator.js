@@ -1240,12 +1240,67 @@ function _showProgInfo() {
   const el = document.getElementById('prog-info'); if (!el) return;
   const miss = parsedData.missing || [], N = parsedData.positions.length, msg = [];
   if (miss.length) msg.push('Unterprogramm nicht gefunden: ' + miss.slice(0, 4).join(', ') + (miss.length > 4 ? ' …' : '')
-    + ' – Modul fehlt. Beim Öffnen alle Dateien gemeinsam wählen (oder loadProgramFiles).');
+    + (window.showDirectoryPicker ? ' – Modul nicht im freigegebenen Ordner. Öffnen und Programmordner wählen.' : ' – Modul fehlt. In diesem Browser beim Öffnen alle Dateien gemeinsam wählen (Chrome/Edge suchen selbst).'));
   if (!N) msg.push('Keine Bewegungen im Programm.');
   else if (parsedData.modules && parsedData.modules.length) msg.push(N + ' Sätze aus Hauptprogramm und ' + parsedData.modules.length + ' Modul(en): ' + parsedData.modules.join(', ') + '.');
   el.textContent = msg.join(' '); el.style.display = msg.length ? '' : 'none';
   el.classList.toggle('warn', !!(miss.length || !N));
 }
+// ── Fehlende Module automatisch suchen ─────────────────────────────────────────
+// Quelle 1: robsimModuleResolver(dateinamen[]) der Host-Software → {dateiname: text} | Promise
+// Quelle 2 (Chrome/Edge): freigegebener Programmordner (File System Access, Handle bleibt im Browser gespeichert)
+var robsimModuleResolver = null, _progDir = null, _resolving = false;
+const _MOD_EXT = ['.prg', '.mod', '.modx', '.sys'];
+function _missingCandidates() {
+  const c = [], have = n => Object.keys(progFiles).some(f => f.toLowerCase() === n.toLowerCase());
+  (parsedData.loads || []).forEach(f => { const b = f.replace(/^.*[\\/]/, ''); if (!have(b)) c.push(b); });
+  (parsedData.missing || []).forEach(m => { const mod = m.indexOf(':') > 0 ? m.split(':')[0] : null;
+    if (mod) _MOD_EXT.forEach(e => { if (!have(mod + e)) c.push(mod + e); }); });
+  return c.filter((x, i) => c.findIndex(y => y.toLowerCase() === x.toLowerCase()) === i);
+}
+function _idb(mode, val) {   // Ordner-Handle im Browser merken
+  return new Promise(res => { try {
+    const rq = indexedDB.open('robsimSimple', 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore('kv');
+    rq.onsuccess = () => { try { const tx = rq.result.transaction('kv', mode === 'get' ? 'readonly' : 'readwrite'), st = tx.objectStore('kv');
+      const r = mode === 'get' ? st.get('progDir') : st.put(val, 'progDir'); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); } catch (e) { res(null); } };
+    rq.onerror = () => res(null);
+  } catch (e) { res(null); } });
+}
+async function _dirFind(dir, names, depth) {   // Dateien (ohne Groß/Klein) im Ordner und 2 Ebenen darunter
+  const out = {}, want = names.map(n => n.toLowerCase());
+  for await (const [n, h] of dir.entries()) {
+    if (h.kind === 'file' && want.includes(n.toLowerCase())) out[n] = await (await h.getFile()).text();
+    else if (h.kind === 'directory' && depth < 2 && Object.keys(out).length < want.length) Object.assign(out, await _dirFind(h, names, depth + 1));
+  }
+  return out;
+}
+async function _resolveModules(ask) {
+  if (_resolving || progFmt !== 'abb') return;
+  const cand = _missingCandidates(); if (!cand.length) return;
+  if (ask) _resolveModules._ask = false;   // höchstens einmal je Öffnen nach dem Ordner fragen
+  _resolving = true;
+  try {
+    let got = {};
+    if (typeof robsimModuleResolver === 'function') { try { got = (await robsimModuleResolver(cand)) || {}; } catch (e) {} }
+    if (!Object.keys(got).length && window.showDirectoryPicker) {
+      if (!_progDir) _progDir = await _idb('get');
+      if (_progDir) { let p = await _progDir.queryPermission({ mode: 'read' });
+        if (p !== 'granted' && ask) p = await _progDir.requestPermission({ mode: 'read' });
+        if (p === 'granted') got = await _dirFind(_progDir, cand, 0); }
+      if (!Object.keys(got).length && ask) {
+        setStatus('paused', 'Module ' + cand.slice(0, 3).join(', ') + ' – bitte Programmordner freigeben');
+        try { _progDir = await window.showDirectoryPicker({ id: 'robsimProg', mode: 'read', startIn: _lastFileHandle || 'documents' }); _idb('put', _progDir);
+          got = await _dirFind(_progDir, cand, 0); } catch (e) {}
+      }
+    }
+    // nur gefundene, neue Module übernehmen; ein Modul ist gefunden, wenn ein Kandidat passt
+    const add = {}; Object.keys(got).forEach(n => { if (typeof got[n] === 'string' && !progFiles[n]) add[n] = got[n]; });
+    if (Object.keys(add).length) { Object.assign(progFiles, add); _showFmt(); _resolving = false; parseAndLoad(); return; }
+    if (ask) _showProgInfo();
+  } finally { _resolving = false; }
+}
+var _lastFileHandle = null;
 // Mehrere Programmdateien laden: {dateiname: text}; main = Dateiname des Hauptprogramms (sonst automatisch:
 // Datei mit Load/%"…"%-Aufrufen bzw. PROC main, die von keiner anderen aufgerufen wird). Parst sofort.
 function loadProgramFiles(files, main) {
@@ -1262,7 +1317,16 @@ function loadProgramFiles(files, main) {
 }
 // Module ohne Hauptprogramm ergänzen/entfernen (null entfernt)
 function setProgramModules(files) { Object.keys(files || {}).forEach(n => { if (files[n] == null) delete progFiles[n]; else progFiles[n] = files[n]; }); _showFmt(); }
-function loadProgram() {
+async function loadProgram() {
+  if (window.showOpenFilePicker) {
+    let hs; try { hs = await window.showOpenFilePicker({ id: 'robsimProg', multiple: true, startIn: _progDir || 'documents',
+      types: [{ description: 'Roboterprogramme', accept: { 'text/plain': ['.src', '.krl', '.dat', '.mod', '.prg', '.modx', '.sys', '.ls', '.apt', '.cl', '.cls', '.aptsource', '.clt', '.txt'] } }] }); }
+    catch (e) { return; }
+    _lastFileHandle = hs[0];
+    const o = {}; for (const h of hs) o[h.name] = await (await h.getFile()).text();
+    _resolveModules._ask = true;   // fehlende Module: Ordner freigeben bzw. aus dem gemerkten Ordner laden
+    loadProgramFiles(o); return;
+  }
   const inp = document.getElementById('prog-file-in');
   inp.onchange = e => {
     const fl = Array.from(e.target.files || []); if (!fl.length) return;
@@ -2514,6 +2578,7 @@ function parseAndLoad(){
   _gutActive=-1;
   ensureBasesForProgram(); // Eintraege fuer alle referenzierten BASE_DATA[n] sicherstellen
   renderTcpNav(); renderBaseNav(); _showProgInfo();
+  if (progFmt === 'abb' && ((parsedData.missing || []).length || (parsedData.loads || []).length)) setTimeout(function() { _resolveModules(!!_resolveModules._ask); }, 0);
   bakeBaseOffset(); // Code-Koordinaten + jeweils aktiver BASE-Offset pro Punkt -> Welt
   const _nLines=code.split(/\r?\n/).length;
   buildGutter(_nLines);
