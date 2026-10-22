@@ -1214,7 +1214,9 @@ let progFmt = 'kuka';
 try { const f = localStorage.getItem('robsimSimple.fmt'); if (f && PROG_FORMATS[f]) progFmt = f; } catch(e) {}
 function _showFmt() {
   const s = document.getElementById('prog-fmt'); if (s) s.value = progFmt;
-  const l = document.getElementById('fmt-label'); if (l) l.textContent = PROG_FORMATS[progFmt].label;
+  const nm = Object.keys(progFiles).length;
+  const l = document.getElementById('fmt-label'); if (l) { l.textContent = PROG_FORMATS[progFmt].label + (nm && progFmt === 'abb' ? ' + ' + nm + ' Modul' + (nm > 1 ? 'e' : '') : '');
+    l.title = nm ? 'Zusätzliche Module: ' + Object.keys(progFiles).join(', ') : ''; }
   try { localStorage.setItem('robsimSimple.fmt', progFmt); } catch(e) {}
 }
 // Umschalten: geparstes, unverändertes Programm wird ins neue Format umgewandelt (wie in RobSimul);
@@ -1233,10 +1235,43 @@ function saveProgram() {
   downloadFile(code, 'programm.' + PROG_FORMATS[progFmt].ext);
 }
 
+// Hinweis: nicht aufgelöste Unterprogramme / keine Bewegungen
+function _showProgInfo() {
+  const el = document.getElementById('prog-info'); if (!el) return;
+  const miss = parsedData.missing || [], N = parsedData.positions.length, msg = [];
+  if (miss.length) msg.push('Unterprogramm nicht gefunden: ' + miss.slice(0, 4).join(', ') + (miss.length > 4 ? ' …' : '')
+    + ' – Modul fehlt. Beim Öffnen alle Dateien gemeinsam wählen (oder loadProgramFiles).');
+  if (!N) msg.push('Keine Bewegungen im Programm.');
+  else if (parsedData.modules && parsedData.modules.length) msg.push(N + ' Sätze aus Hauptprogramm und ' + parsedData.modules.length + ' Modul(en): ' + parsedData.modules.join(', ') + '.');
+  el.textContent = msg.join(' '); el.style.display = msg.length ? '' : 'none';
+  el.classList.toggle('warn', !!(miss.length || !N));
+}
+// Mehrere Programmdateien laden: {dateiname: text}; main = Dateiname des Hauptprogramms (sonst automatisch:
+// Datei mit Load/%"…"%-Aufrufen bzw. PROC main, die von keiner anderen aufgerufen wird). Parst sofort.
+function loadProgramFiles(files, main) {
+  const names = Object.keys(files || {}); if (!names.length) return;
+  if (!main || !files[main]) {
+    const calls = names.filter(n => /\bLoad\b|%\s*"|CallByVar/i.test(files[n]));
+    main = calls[0] || names.find(n => /PROC\s+main\s*\(/i.test(files[n])) || names[0];
+  }
+  progFiles = {}; names.forEach(n => { if (n !== main) progFiles[n] = files[n]; });
+  _codeEl.value = files[main];
+  const det = detectProgramFormat(files[main], main); if (det) progFmt = det;
+  _showFmt(); rebuildGutter(); parseAndLoad();
+  setStatus('paused', 'Programm ' + main + (names.length > 1 ? ' + ' + (names.length - 1) + ' Module' : '') + ' geladen');
+}
+// Module ohne Hauptprogramm ergänzen/entfernen (null entfernt)
+function setProgramModules(files) { Object.keys(files || {}).forEach(n => { if (files[n] == null) delete progFiles[n]; else progFiles[n] = files[n]; }); _showFmt(); }
 function loadProgram() {
   const inp = document.getElementById('prog-file-in');
   inp.onchange = e => {
-    const file = e.target.files[0]; if (!file) return;
+    const fl = Array.from(e.target.files || []); if (!fl.length) return;
+    if (fl.length > 1) {   // mehrere Dateien: Hauptprogramm + Module (z. B. ABB Load\Dynamic)
+      Promise.all(fl.map(f => f.text().then(t => [f.name, t]))).then(arr => {
+        const o = {}; arr.forEach(([n, t]) => { o[n] = t; }); loadProgramFiles(o); });
+      inp.value = ''; return;
+    }
+    const file = fl[0]; progFiles = {};
     const reader = new FileReader();
     reader.onload = ev => {
       document.getElementById('code-input').value = ev.target.result;
@@ -2478,7 +2513,7 @@ function parseAndLoad(){
   parsedData.steps.forEach((s,i)=>{if(s.type==='move'&&parsedData.stepOfPos[s.posIdx]<0)parsedData.stepOfPos[s.posIdx]=i;});
   _gutActive=-1;
   ensureBasesForProgram(); // Eintraege fuer alle referenzierten BASE_DATA[n] sicherstellen
-  renderTcpNav(); renderBaseNav();
+  renderTcpNav(); renderBaseNav(); _showProgInfo();
   bakeBaseOffset(); // Code-Koordinaten + jeweils aktiver BASE-Offset pro Punkt -> Welt
   const _nLines=code.split(/\r?\n/).length;
   buildGutter(_nLines);
@@ -3183,6 +3218,9 @@ function aPlotApply() {
   var nEd = Object.keys(_aPlotEdits).length;
   if (!nEd) { aPlotMsg('Programm entspricht bereits der Linie'); return; }
   // ABB/FANUC: Programm mit neuen A-Werten neu schreiben; APT kennt keinen A-Wert → als KUKA-Programm ausgeben
+  if (progFmt === 'abb' && Object.keys(progFiles).length) {
+    aPlotMsg('Programm besteht aus mehreren Modulen – Übernehmen hier nicht möglich (würde die Module zusammenführen).'); return;
+  }
   if (progFmt !== 'kuka') {
     Object.keys(_aPlotEdits).forEach(function(i) { var q = pos[+i]; (q.rel || q).A = _aPlotEdits[i]; });
     var target = progFmt === 'apt' ? 'kuka' : progFmt;

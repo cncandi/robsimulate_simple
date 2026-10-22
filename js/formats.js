@@ -104,26 +104,49 @@ function _fmtFrames(lit) {
   return out;
 }
 function _fmtFrameObj(F) { const o = _fmtABC(F.R); return { x: F.t[0], y: F.t[1], z: F.t[2], a: o.A, b: o.B, c: o.C }; }
-function parseABB(text) {
-  const P = _progBuilder(), lines = text.split(/\r?\n/), targets = {}, speeds = {};
-  // Programmzeilen mit Fortsetzung bis ';' zusammenführen (Zeilennummer = erste Zeile)
-  const stmts = []; let buf = '', start = 0;
-  lines.forEach((raw, ln) => {
-    const l = raw.replace(/!.*$/, '').trim(); if (!l) return;
+// Zusätzliche Module (Dateiname → Text), z. B. per Load\Dynamic nachgeladene .prg/.mod
+var progFiles = {};
+// Kommentar (!) außerhalb von Zeichenketten entfernen
+function _abbStrip(l) { let q = false; for (let i = 0; i < l.length; i++) { const c = l[i]; if (c === '"') q = !q; else if (c === '!' && !q) return l.slice(0, i); } return l; }
+// Programmtext in Anweisungen zerlegen (Fortsetzung bis ';', Blockzeilen einzeln); Zeilennummer = erste Zeile
+function _abbStmts(text) {
+  const out = []; let buf = '', start = 0;
+  const END = /^(MODULE|ENDMODULE|(LOCAL\s+)?(PROC|FUNC|TRAP)\b|ENDPROC|ENDFUNC|ENDTRAP|ELSE|ENDIF|ENDFOR|ENDWHILE|ENDTEST|DEFAULT\s*:|ERROR|BACKWARD|UNDO)\b/i;
+  text.split(/\r?\n/).forEach((raw, ln) => {
+    const l = _abbStrip(raw).trim(); if (!l) return;
     if (!buf) start = ln; buf += (buf ? ' ' : '') + l;
-    if (/;\s*$/.test(l) || /^(MODULE|ENDMODULE|PROC|ENDPROC|ENDFUNC|ENDTRAP)\b/i.test(l)) { stmts.push({ ln: start, s: buf.replace(/;\s*$/, '') }); buf = ''; }
+    if (/;\s*$/.test(l) || /\b(THEN|DO)\s*$/i.test(l) || /^CASE\b.*:\s*$/i.test(l) || END.test(buf)) { out.push({ ln: start, s: buf.replace(/;\s*$/, '').trim() }); buf = ''; }
   });
-  if (buf) stmts.push({ ln: start, s: buf });
-  // Werkzeuge und Werkobjekte des Moduls
+  if (buf) out.push({ ln: start, s: buf.trim() });
+  return out;
+}
+function parseABB(text, files) {
+  const P = _progBuilder(), targets = {}, speeds = {}, strs = {}, missing = [], modNames = [];
+  files = files || progFiles || {};
+  // Module: Hauptprogramm (Editor) + übergebene Dateien
+  const mods = [{ file: '', main: true, stmts: _abbStmts(text) }]
+    .concat(Object.keys(files).filter(f => files[f] && files[f] !== text).map(f => ({ file: f, main: false, stmts: _abbStmts(files[f]) })));
+  mods.forEach(m => { const h = m.stmts.find(s => /^MODULE\s+\w+/i.test(s.s));
+    m.name = h ? h.s.match(/^MODULE\s+(\w+)/i)[1] : (m.file || 'MAIN').replace(/^.*[\\/]/, '').replace(/\.\w+$/, '');
+    m.stem = (m.file || '').replace(/^.*[\\/]/, '').replace(/\.\w+$/, '');
+    if (!m.main) modNames.push(m.name); });
+  const all = []; mods.forEach(m => m.stmts.forEach(s => all.push(s)));
+  // Werkzeuge, Werkobjekte, Zielpunkte, Geschwindigkeiten, Zeichenketten aller Module
   const toolId = {}, wobjId = {};
   let nextTool = ABB_TOOL0 + 1;
-  stmts.forEach(({ s }) => {
+  const DECL = '^(?:LOCAL\\s+)?(?:TASK\\s+)?(?:CONST|VAR|PERS)\\s+';
+  const poseOf = lit => {
+    const m = lit.match(/\[\s*\[([^\]]+)\]\s*,\s*\[([^\]]+)\]/); if (!m) return null;
+    const xyz = m[1].split(',').map(_num), q = m[2].split(',').map(_num), o = _fmtQuatToABC(q[0], q[1], q[2], q[3]);
+    return { X: xyz[0], Y: xyz[1], Z: xyz[2], A: o.A, B: o.B, C: o.C };
+  };
+  all.forEach(({ s }) => {
     let m;
-    if ((m = s.match(/^(?:LOCAL\s+)?(?:TASK\s+)?(?:CONST|VAR|PERS)\s+tooldata\s+(\w+)\s*:=\s*\[(.*)\]\s*$/i))) {
+    if ((m = s.match(new RegExp(DECL + 'tooldata\\s+(\\w+)\\s*:=\\s*\\[(.*)\\]\\s*$', 'i')))) {
       const F = _fmtFrames(m[2])[0]; if (!F) return;
-      const id = /^tool0$/i.test(m[1]) ? ABB_TOOL0 : nextTool++;
+      const id = /^tool0$/i.test(m[1]) ? ABB_TOOL0 : (toolId[m[1].toLowerCase()] || nextTool++);
       toolId[m[1].toLowerCase()] = id; P.tools[id] = Object.assign(_fmtFrameObj(F), { name: m[1], robhold: !/^\s*FALSE/i.test(m[2]) });
-    } else if ((m = s.match(/^(?:LOCAL\s+)?(?:TASK\s+)?(?:CONST|VAR|PERS)\s+wobjdata\s+(\w+)\s*:=\s*\[(.*)\]\s*$/i))) {
+    } else if ((m = s.match(new RegExp(DECL + 'wobjdata\\s+(\\w+)\\s*:=\\s*\\[(.*)\\]\\s*$', 'i')))) {
       if (/^wobj0$/i.test(m[1])) return;
       const fr = _fmtFrames(m[2]); if (!fr.length) return;
       const W = _fmtFrameObj(fr.length > 1 ? _fmtMatMul(fr[0], fr[1]) : fr[0]);
@@ -135,7 +158,25 @@ function parseABB(text) {
       const e = baseList[i]; e.abbName = m[1]; e.name = m[1];
       if (_fmtWobjSrc[m[1]] !== m[2]) { Object.assign(e, W); _fmtWobjSrc[m[1]] = m[2]; }
       wobjId[m[1].toLowerCase()] = i + 1;
-    }
+    } else if ((m = s.match(new RegExp(DECL + 'robtarget\\s+(\\w+)\\s*:=\\s*(\\[.*\\])', 'i')))) { const p = poseOf(m[2]); if (p) targets[m[1]] = p; }
+    else if ((m = s.match(new RegExp(DECL + 'speeddata\\s+(\\w+)\\s*:=\\s*\\[([^,\\]]+)', 'i')))) speeds[m[1]] = _num(m[2]) / 1000;
+    else if ((m = s.match(new RegExp(DECL + 'string\\s+(\\w+)\\s*:=\\s*"([^"]*)"', 'i')))) strs[m[1].toLowerCase()] = m[2];
+  });
+  // Prozeduren je Modul
+  const procs = {}, byName = {};
+  mods.forEach((m, mi) => {
+    let cur = null;
+    m.stmts.forEach(st => {
+      const h = st.s.match(/^(?:LOCAL\s+)?PROC\s+(\w+)/i);
+      if (h) { cur = { name: h[1], mod: m, stmts: [] }; procs[m.name.toLowerCase() + ':' + h[1].toLowerCase()] = cur;
+        if (m.stem) procs[m.stem.toLowerCase() + ':' + h[1].toLowerCase()] = cur;
+        if (!byName[h[1].toLowerCase()]) byName[h[1].toLowerCase()] = cur; return; }
+      if (/^(ENDPROC|ENDFUNC|ENDTRAP)\b/i.test(st.s)) { cur = null; return; }
+      if (/^(ERROR|BACKWARD|UNDO)\b/i.test(st.s) && cur) { cur.done = true; return; }   // Fehlerbehandlung nicht simulieren
+      if (cur && cur.done) return;
+      if (/^(?:LOCAL\s+)?(FUNC|TRAP)\b/i.test(st.s)) { cur = { name: '', mod: m, stmts: [] }; return; }
+      if (cur) cur.stmts.push(st);
+    });
   });
   const toolNum = nm => { const k = nm.toLowerCase();
     if (toolId[k]) return toolId[k];
@@ -143,11 +184,6 @@ function parseABB(text) {
     const n = parseInt(k.replace(/\D/g, ''), 10); return n > 0 ? n : 1; };
   const wobjNum = nm => { const k = nm.toLowerCase(); if (wobjId[k]) return wobjId[k]; if (k === 'wobj0') return 0;
     const n = parseInt(k.replace(/\D/g, ''), 10); return isNaN(n) ? 0 : n; };
-  const poseOf = lit => {
-    const m = lit.match(/\[\s*\[([^\]]+)\]\s*,\s*\[([^\]]+)\]/); if (!m) return null;
-    const xyz = m[1].split(',').map(_num), q = m[2].split(',').map(_num), o = _fmtQuatToABC(q[0], q[1], q[2], q[3]);
-    return { X: xyz[0], Y: xyz[1], Z: xyz[2], A: o.A, B: o.B, C: o.C };
-  };
   const target = t => {
     t = t.trim();
     if (t[0] === '[') return poseOf(t);
@@ -172,27 +208,73 @@ function parseABB(text) {
     if (tl) P.setTool(toolNum(tl), ln);
     P.setBase(w ? wobjNum(w[1]) : 0, ln);
   };
-  stmts.forEach(({ ln, s }) => {
-    let m;
-    if (/^(?:LOCAL\s+)?(?:TASK\s+)?(?:CONST|VAR|PERS)\s+(tooldata|wobjdata|loaddata)\b/i.test(s)) return;
-    if ((m = s.match(/^(?:LOCAL\s+)?(?:TASK\s+)?(?:CONST|VAR|PERS)\s+robtarget\s+(\w+)\s*:=\s*(\[.*\])/i))) { const p = poseOf(m[2]); if (p) targets[m[1]] = p; return; }
-    if ((m = s.match(/^(?:LOCAL\s+)?(?:CONST|VAR|PERS)\s+speeddata\s+(\w+)\s*:=\s*\[([^,\]]+)/i))) { speeds[m[1]] = _num(m[2]) / 1000; return; }
-    if ((m = s.match(/^(MoveL|MoveJ)\s+(.*)$/i))) {
-      const a = args(m[2]), p = target(a[0]); if (!p) { P.other(s, ln); return; }
-      const v = speedOf(a[1]); if (v) P.setVel(v, ln); toolWobj(a, ln);
-      P.move(/MoveJ/i.test(m[1]) ? 'PTP' : 'LIN', p, ln); return; }
-    if ((m = s.match(/^MoveC\s+(.*)$/i))) {
-      const a = args(m[1]), via = target(a[0]), end = target(a[1]); if (!via || !end) { P.other(s, ln); return; }
-      const v = speedOf(a[2]); if (v) P.setVel(v, ln); toolWobj(a.slice(1), ln); P.circ(via, end, ln); return; }
-    if ((m = s.match(/^MoveAbsJ\s+\[\s*\[([^\]]+)\]/i))) { P.ptpAxis(m[1].split(',').map(_num).slice(0, 6), ln); return; }
-    if ((m = s.match(/^SetDO\s+(\w+)\s*,\s*(\d)/i))) { P.dout(parseInt(m[1].replace(/\D/g, ''), 10) || 1, m[2] === '1', ln); return; }
-    if ((m = s.match(/^WaitDI\s+(\w+)/i))) { P.din(parseInt(m[1].replace(/\D/g, ''), 10) || 1, ln); return; }
-    if ((m = s.match(/^WaitTime\s+([\d.]+)/i))) { P.wait(_num(m[1]), ln); return; }
-    if (/^(Stop|Break)\b/i.test(s)) { P.halt(ln); return; }
-    if (/^(MODULE|ENDMODULE|PROC|ENDPROC)\b/i.test(s)) return;
-    P.other(s, ln);
-  });
-  return P.result();
+  const POS = P.result().positions;
+  let budget = 3e6;   // Schutz gegen Endlosschleifen/Rekursion
+  // Prozeduraufruf: "MODUL:PROC" oder "PROC" (zuerst im aktuellen Modul)
+  const call = (name, ctx, ln) => {
+    const k = name.trim().toLowerCase(); let pr = procs[k];
+    if (!pr && k.indexOf(':') < 0) pr = procs[ctx.mod.name.toLowerCase() + ':' + k] || byName[k];
+    if (!pr) { if (missing.indexOf(name) < 0) missing.push(name); P.other('Aufruf ' + name, ln); return; }
+    if (ctx.depth > 30) { P.other('Rekursion ' + name, ln); return; }
+    return run(pr.stmts, { mod: pr.mod, callLn: ln, depth: ctx.depth + 1 });
+  };
+  // Blockende suchen: Index der passenden Endzeile (gleiche Tiefe)
+  const OPEN = /^(IF\b.*\bTHEN|FOR\b.*\bDO|WHILE\b.*\bDO|TEST\b)/i, CLOSE = /^(ENDIF|ENDFOR|ENDWHILE|ENDTEST)\b/i;
+  const blockEnd = (L, i) => { let d = 0; for (let j = i; j < L.length; j++) { if (OPEN.test(L[j].s)) d++; else if (CLOSE.test(L[j].s) && --d === 0) return j; } return L.length - 1; };
+  // erster Zweig (bis ELSEIF/ELSE/CASE/DEFAULT auf Tiefe 1)
+  const firstBranch = (L, i, e, isTest) => { let d = 0, s = isTest ? -1 : i + 1;
+    for (let j = i; j < e; j++) { const x = L[j].s;
+      if (OPEN.test(x)) { d++; continue; } if (CLOSE.test(x)) { d--; continue; }
+      if (d === 1 && isTest && /^CASE\b/i.test(x)) { if (s < 0) s = j + 1; else return [s, j]; }
+      else if (d === 1 && (/^(ELSEIF|ELSE)\b/i.test(x) || (isTest && /^DEFAULT\s*:/i.test(x)))) { if (!isTest || s >= 0) return [s, j]; } }
+    return [s < 0 ? e : s, e]; };
+  const run = (L, ctx) => {
+    for (let i = 0; i < L.length; i++) {
+      if (--budget < 0) return 'exit';
+      const st = L[i], s = st.s, ln = ctx.callLn !== undefined ? ctx.callLn : st.ln; let m, r;
+      if (/^IF\b.*\bTHEN$/i.test(s) || /^TEST\b/i.test(s)) {
+        const e = blockEnd(L, i), br = firstBranch(L, i, e, /^TEST\b/i.test(s));
+        r = run(L.slice(br[0], br[1]), ctx); if (r) return r; i = e; continue; }
+      if ((m = s.match(/^FOR\s+\w+\s+FROM\s+(-?\d+)\s+TO\s+(-?\d+)(?:\s+STEP\s+(-?\d+))?\s+DO$/i)) || /^(FOR|WHILE)\b.*\bDO$/i.test(s)) {
+        const e = blockEnd(L, i), st2 = m ? (+m[3] || 1) : 1;
+        const n = m ? Math.max(0, Math.min(1000, Math.floor((+m[2] - +m[1]) / st2) + 1)) : 1;
+        for (let k = 0; k < n; k++) { r = run(L.slice(i + 1, e), ctx); if (r === 'exit') return r; }
+        i = e; continue; }
+      if ((m = s.match(/^(MoveL|MoveJ)\s+(.*)$/i))) {
+        const a = args(m[2]), p = target(a[0]); if (!p) { P.other(s, ln); continue; }
+        const v = speedOf(a[1]); if (v) P.setVel(v, ln); toolWobj(a, ln);
+        P.move(/MoveJ/i.test(m[1]) ? 'PTP' : 'LIN', p, ln);
+        if (!ctx.mod.main) POS[POS.length - 1].src = { file: ctx.mod.file, line: st.ln };
+        continue; }
+      if ((m = s.match(/^MoveC\s+(.*)$/i))) {
+        const a = args(m[1]), via = target(a[0]), end = target(a[1]); if (!via || !end) { P.other(s, ln); continue; }
+        const v = speedOf(a[2]); if (v) P.setVel(v, ln); toolWobj(a.slice(1), ln); P.circ(via, end, ln);
+        if (!ctx.mod.main) { POS[POS.length - 1].src = POS[POS.length - 2].src = { file: ctx.mod.file, line: st.ln }; }
+        continue; }
+      if ((m = s.match(/^MoveAbsJ\s+\[\s*\[([^\]]+)\]/i))) { P.ptpAxis(m[1].split(',').map(_num).slice(0, 6), ln); continue; }
+      if ((m = s.match(/^SetDO\s+(\w+)\s*,\s*(\d)/i))) { P.dout(parseInt(m[1].replace(/\D/g, ''), 10) || 1, m[2] === '1', ln); continue; }
+      if ((m = s.match(/^WaitDI\s+(\w+)/i))) { P.din(parseInt(m[1].replace(/\D/g, ''), 10) || 1, ln); continue; }
+      if ((m = s.match(/^WaitTime\s+([\d.]+)/i))) { P.wait(_num(m[1]), ln); continue; }
+      if (/^(Stop|Break)\b/i.test(s)) { P.halt(ln); continue; }
+      if (/^RETURN\b/i.test(s)) return 'ret';
+      if (/^EXIT\b/i.test(s)) return 'exit';
+      // Spätes Binden: %"MODUL:PROC"% oder %variable%
+      if ((m = s.match(/^%\s*"([^"]+)"\s*%/)) || (m = s.match(/^%\s*(\w+)\s*%/))) {
+        const nm = /^%\s*"/.test(s) ? m[1] : strs[m[1].toLowerCase()];
+        if (nm) { r = call(nm, ctx, ln); if (r === 'exit') return r; } else P.other(s, ln); continue; }
+      if ((m = s.match(/^CallByVar\s+"(\w+)"\s*,\s*(\d+)/i))) { r = call(m[1] + m[2], ctx, ln); if (r === 'exit') return r; continue; }
+      if (/^(Load|StartLoad|WaitLoad|Unload|EraseModule|CancelLoad)\b/i.test(s)) continue;
+      if (/^(MODULE|ENDMODULE)\b/i.test(s) || new RegExp(DECL).test(s)) continue;
+      if ((m = s.match(/^(\w+)(?:\s+(?!:=).*)?$/)) && (procs[ctx.mod.name.toLowerCase() + ':' + m[1].toLowerCase()] || byName[m[1].toLowerCase()])) {
+        r = call(m[1], ctx, ln); if (r === 'exit') return r; continue; }
+      P.other(s, ln);
+    }
+  };
+  // Einstieg: PROC main des Hauptprogramms, sonst erste PROC, sonst alle Anweisungen
+  const M = mods[0], entry = procs[M.name.toLowerCase() + ':main'] || Object.values(procs).find(p => p.mod === M && p.name);
+  run(entry ? entry.stmts : M.stmts, { mod: M, depth: 0 });
+  const res = P.result(); res.missing = missing; res.modules = modNames;
+  return res;
 }
 
 // ── FANUC TP (LS) ─────────────────────────────────────────────────────────

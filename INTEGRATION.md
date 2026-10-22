@@ -82,6 +82,10 @@ Alle Winkel in Grad, Längen in mm. `t` = Satzposition 0 … N−1 (Kommazahl = 
 |---|---|
 | `document.getElementById('code-input').value = krl` | KRL-Text setzen |
 | `parseAndLoad()` | parsen und IK rechnen (asynchron, in Häppchen) |
+| `loadProgramFiles({datei: text, …}, hauptdatei?)` | Hauptprogramm + Module laden und parsen (ABB: `Load`, `%"MODUL:PROC"%`, Prozeduraufrufe werden aufgelöst). Ohne `hauptdatei` wird die Datei mit Load/`%"…"%` gewählt |
+| `progFiles` | zusätzliche Module `{datei: text}` (Hauptprogramm steht im Editor) |
+| `parsedData.missing` | nicht gefundene Unterprogramme; `parsedData.modules` = verwendete Module |
+| `parsedData.positions[i].src` | `{file, line}` bei Sätzen aus einem Modul (`lineNum` = Aufrufzeile im Hauptprogramm) |
 | `_ikPending` | `true` solange die IK rechnet; fertig wenn `false` |
 | `parsedData.positions[i]` | `{type, X,Y,Z,A,B,C, rel, lineNum, velCP, toolN, baseN}` – X…C in Weltkoordinaten (BASE eingerechnet), `rel` = Werte wie im Programm |
 | `parsedData.steps` | Programmschritte inkl. `$VEL.CP`, `$OUT`, `WAIT` … |
@@ -157,6 +161,7 @@ Nicht ausgewertet: Steuerstrukturen (IF/LOOP/FOR …), Unterprogramme, Interrupt
 - **ABB RAPID**: `MoveL/MoveJ/MoveC/MoveAbsJ`, benannte und eingebettete robtargets, `Offs()`, speeddata (`vNNN`, eigene), `toolN`, `\WObj:=wobjN`, `SetDO`, `WaitDI`, `WaitTime`, `Stop`. Quaternion → A,B,C.
 - **FANUC TP (.ls)**: `/POS`-Abschnitt (UF, UT, X…R oder J1…J6), `J/L/C P[n]` mit mm/sec, cm/min, inch/min, %; `UTOOL_NUM`, `UFRAME_NUM`, `DO[]`, `WAIT DI[]`, `WAIT sec`, `PAUSE`. W,P,R → C,B,A.
 - **APT CL-Data**: `GOTO` (mit Werkzeugachse i,j,k), `FROM`, `RAPID`, `FEDRAT` (MMPM/IPM), `CIRCLE`, `LOADTL`, `TLAXIS`, `UNITS`. Koordinaten = BASE 1. APT hat keine Drehung um die Werkzeugachse → A = 0, mit der Robot Map optimieren; „Übernehmen“ schreibt dann KUKA.
+- **ABB-Programmablauf**: PROC main des Hauptprogramms, Prozeduraufrufe, `%"MODUL:PROC"%`/`%stringvar%`, `CallByVar`; `IF`/`TEST` → erster Zweig, `FOR` mit Zahlengrenzen (max. 1000 Durchläufe), `WHILE` einmal; `Load`/`Unload` werden übersprungen (Module müssen mit übergeben werden); ERROR-Handler werden nicht simuliert. Beim Öffnen mehrere Dateien gemeinsam wählen.
 - **Werkzeuge/Werkobjekte im Programm**: ABB `tooldata` (tframe) und `wobjdata` (uframe∘oframe) sowie KRL `TOOL_DATA[n]={X…}` werden für die Simulation übernommen und haben Vorrang vor den Werkzeugen des Roboters. `tool0` = Flansch, `wobj0` = Welt. Werkzeugrahmen: Z aus dem Flansch (ABB tool0 = KUKA FLANGE). wobjdata erscheinen als BASE-Einträge mit ihrem Namen; „Teilposition optimieren“ schreibt die neue Lage in die wobjdata-Deklaration. `parsedData.tools` = `{nr: {x,y,z,a,b,c,name}}` (ABB-Werkzeuge ab Nr. 101, tool0 = 100). Die Fußzeile zeigt das aktive Werkzeug.
 - Umschalten des Formats erzeugt das Programm neu: Kommentare und nicht ausgewertete Zeilen gehen dabei verloren.
 
