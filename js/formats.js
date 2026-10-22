@@ -78,7 +78,8 @@ function _progBuilder(base0) {
     din(n, ln) { din[n] = false; step(ln, 'din', { n }); },
     halt(ln) { step(ln, 'halt', {}); },
     other(raw, ln) { step(ln, 'other', { raw }); },
-    result() { return { steps, positions, finalState: { variables: {}, digitalIn: {...din}, digitalOut: {...dout}, analogOut: {...anout}, analogIn: {} } }; },
+    tools: {},
+    result() { return { steps, positions, tools: this.tools, finalState: { variables: {}, digitalIn: {...din}, digitalOut: {...dout}, analogOut: {...anout}, analogIn: {} } }; },
   };
 }
 const _num = s => parseFloat(String(s).trim());
@@ -86,7 +87,23 @@ const _num = s => parseFloat(String(s).trim());
 // ── ABB RAPID ─────────────────────────────────────────────────────────────
 // robtarget benannt (CONST/VAR/PERS … := [[x,y,z],[q1..q4],…]) oder direkt in der Bewegung;
 // MoveL/MoveJ/MoveC, Offs(p,dx,dy,dz), MoveAbsJ [[j1..j6],…]; Geschwindigkeit vNNN oder [v_tcp,…];
-// \WObj:=wobjN → BASE N, toolN → TOOL N (tool0 → TOOL 1); SetDO, WaitDI, WaitTime, Stop.
+// tooldata/wobjdata aus dem Modul werden für die Simulation übernommen (tool0 = Flansch, wobj0 = Welt);
+// nicht deklarierte toolN/wobjN → TOOL N / BASE N des Roboters. SetDO, WaitDI, WaitTime, Stop.
+// Werkzeugrahmen: Z aus dem Flansch, X bei Grundstellung nach unten (ABB tool0 = KUKA FLANGE = TCP-Nullrahmen).
+const ABB_TOOL0 = 100;              // Werkzeugnummer für tool0 (Flansch)
+var _fmtWobjSrc = {};               // zuletzt gelesene wobjdata je Name (Änderungen in der BASE-Eingabe bleiben erhalten)
+function _fmtPoseMat(x, y, z, q) { const o = _fmtQuatToABC(q[0], q[1], q[2], q[3]), R = _fmtR(o.A, o.B, o.C); return { R, t: [x, y, z] }; }
+function _fmtMatMul(a, b) {
+  const R = [0, 1, 2].map(i => [0, 1, 2].map(j => a.R[i][0]*b.R[0][j] + a.R[i][1]*b.R[1][j] + a.R[i][2]*b.R[2][j]));
+  return { R, t: [0, 1, 2].map(i => a.R[i][0]*b.t[0] + a.R[i][1]*b.t[1] + a.R[i][2]*b.t[2] + a.t[i]) };
+}
+// zwei [[x,y,z],[q1..q4]]-Rahmen ab Position k im Literal
+function _fmtFrames(lit) {
+  const re = /\[\s*\[([^\[\]]+)\]\s*,\s*\[([^\[\]]+)\]\s*\]/g, out = []; let m;
+  while ((m = re.exec(lit))) { const p = m[1].split(',').map(_num), q = m[2].split(',').map(_num); if (p.length === 3 && q.length === 4) out.push(_fmtPoseMat(p[0], p[1], p[2], q)); }
+  return out;
+}
+function _fmtFrameObj(F) { const o = _fmtABC(F.R); return { x: F.t[0], y: F.t[1], z: F.t[2], a: o.A, b: o.B, c: o.C }; }
 function parseABB(text) {
   const P = _progBuilder(), lines = text.split(/\r?\n/), targets = {}, speeds = {};
   // Programmzeilen mit Fortsetzung bis ';' zusammenführen (Zeilennummer = erste Zeile)
@@ -97,6 +114,35 @@ function parseABB(text) {
     if (/;\s*$/.test(l) || /^(MODULE|ENDMODULE|PROC|ENDPROC|ENDFUNC|ENDTRAP)\b/i.test(l)) { stmts.push({ ln: start, s: buf.replace(/;\s*$/, '') }); buf = ''; }
   });
   if (buf) stmts.push({ ln: start, s: buf });
+  // Werkzeuge und Werkobjekte des Moduls
+  const toolId = {}, wobjId = {};
+  let nextTool = ABB_TOOL0 + 1;
+  stmts.forEach(({ s }) => {
+    let m;
+    if ((m = s.match(/^(?:LOCAL\s+)?(?:TASK\s+)?(?:CONST|VAR|PERS)\s+tooldata\s+(\w+)\s*:=\s*\[(.*)\]\s*$/i))) {
+      const F = _fmtFrames(m[2])[0]; if (!F) return;
+      const id = /^tool0$/i.test(m[1]) ? ABB_TOOL0 : nextTool++;
+      toolId[m[1].toLowerCase()] = id; P.tools[id] = Object.assign(_fmtFrameObj(F), { name: m[1], robhold: !/^\s*FALSE/i.test(m[2]) });
+    } else if ((m = s.match(/^(?:LOCAL\s+)?(?:TASK\s+)?(?:CONST|VAR|PERS)\s+wobjdata\s+(\w+)\s*:=\s*\[(.*)\]\s*$/i))) {
+      if (/^wobj0$/i.test(m[1])) return;
+      const fr = _fmtFrames(m[2]); if (!fr.length) return;
+      const W = _fmtFrameObj(fr.length > 1 ? _fmtMatMul(fr[0], fr[1]) : fr[0]);
+      if (typeof baseList === 'undefined') return;
+      let i = baseList.findIndex(b => b && b.abbName === m[1]);
+      const dn = m[1].match(/^wobj(\d+)$/i);   // wobjN ohne Zuordnung → BASE N
+      if (i < 0 && dn && +dn[1] >= 1 && +dn[1] <= baseList.length && !baseList[+dn[1] - 1].abbName) i = +dn[1] - 1;
+      if (i < 0) { baseList.push({ x: 0, y: 0, z: 0, a: 0, b: 0, c: 0 }); i = baseList.length - 1; _fmtWobjSrc[m[1]] = null; }
+      const e = baseList[i]; e.abbName = m[1]; e.name = m[1];
+      if (_fmtWobjSrc[m[1]] !== m[2]) { Object.assign(e, W); _fmtWobjSrc[m[1]] = m[2]; }
+      wobjId[m[1].toLowerCase()] = i + 1;
+    }
+  });
+  const toolNum = nm => { const k = nm.toLowerCase();
+    if (toolId[k]) return toolId[k];
+    if (k === 'tool0') { P.tools[ABB_TOOL0] = { x: 0, y: 0, z: 0, a: 0, b: 0, c: 0, name: 'tool0' }; return ABB_TOOL0; }
+    const n = parseInt(k.replace(/\D/g, ''), 10); return n > 0 ? n : 1; };
+  const wobjNum = nm => { const k = nm.toLowerCase(); if (wobjId[k]) return wobjId[k]; if (k === 'wobj0') return 0;
+    const n = parseInt(k.replace(/\D/g, ''), 10); return isNaN(n) ? 0 : n; };
   const poseOf = lit => {
     const m = lit.match(/\[\s*\[([^\]]+)\]\s*,\s*\[([^\]]+)\]/); if (!m) return null;
     const xyz = m[1].split(',').map(_num), q = m[2].split(',').map(_num), o = _fmtQuatToABC(q[0], q[1], q[2], q[3]);
@@ -120,13 +166,16 @@ function parseABB(text) {
     if (/^vmax$/i.test(v)) return 5; return null; };
   const toolWobj = (a, ln) => {
     const rest = a.join(','), w = rest.match(/\\WObj\s*:=\s*(\w+)/i);
-    const tl = a.slice(1).map(x => x.replace(/\\.*$/, '').trim()).find(x => /^tool\w*$/i.test(x));
-    if (tl) { const n = parseInt(tl.replace(/\D/g, ''), 10); P.setTool(n > 0 ? n : 1, ln); }
-    if (w) { const n = parseInt(w[1].replace(/\D/g, ''), 10); P.setBase(isNaN(n) ? 0 : n, ln); }
+    // Werkzeug = Argument nach Geschwindigkeit und Zone (Name beliebig), sonst erstes tool…-Argument
+    const plain = a.slice(1).map(x => x.replace(/\\.*$/, '').trim());
+    const tl = plain.find(x => toolId[x.toLowerCase()]) || plain.find(x => /^tool\w*$/i.test(x));
+    if (tl) P.setTool(toolNum(tl), ln);
+    P.setBase(w ? wobjNum(w[1]) : 0, ln);
   };
   stmts.forEach(({ ln, s }) => {
     let m;
-    if ((m = s.match(/^(?:LOCAL\s+)?(?:CONST|VAR|PERS)\s+robtarget\s+(\w+)\s*:=\s*(\[.*\])/i))) { const p = poseOf(m[2]); if (p) targets[m[1]] = p; return; }
+    if (/^(?:LOCAL\s+)?(?:TASK\s+)?(?:CONST|VAR|PERS)\s+(tooldata|wobjdata|loaddata)\b/i.test(s)) return;
+    if ((m = s.match(/^(?:LOCAL\s+)?(?:TASK\s+)?(?:CONST|VAR|PERS)\s+robtarget\s+(\w+)\s*:=\s*(\[.*\])/i))) { const p = poseOf(m[2]); if (p) targets[m[1]] = p; return; }
     if ((m = s.match(/^(?:LOCAL\s+)?(?:CONST|VAR|PERS)\s+speeddata\s+(\w+)\s*:=\s*\[([^,\]]+)/i))) { speeds[m[1]] = _num(m[2]) / 1000; return; }
     if ((m = s.match(/^(MoveL|MoveJ)\s+(.*)$/i))) {
       const a = args(m[2]), p = target(a[0]); if (!p) { P.other(s, ln); return; }
@@ -267,7 +316,10 @@ function generateProgram(fmt, pd, name) {
   name = (name || 'ROBSIM').replace(/\W/g, '_').toUpperCase();
   const L = [];
   if (fmt === 'kuka') {
-    L.push('DEF ' + name + '()', '$BASE=BASE_DATA[1]', '$TOOL=TOOL_DATA[1]');
+    L.push('DEF ' + name + '()');
+    Object.keys(pd.tools || {}).forEach(n => { const t = pd.tools[n];
+      L.push('TOOL_DATA[' + n + ']={X ' + _f3(t.x) + ', Y ' + _f3(t.y) + ', Z ' + _f3(t.z) + ', A ' + _f3(t.a) + ', B ' + _f3(t.b) + ', C ' + _f3(t.c) + '} ; ' + (t.name || '')); });
+    L.push('$BASE=BASE_DATA[1]', '$TOOL=TOOL_DATA[1]');
     const kp = p => '{X ' + _f3(p.X) + ', Y ' + _f3(p.Y) + ', Z ' + _f3(p.Z) + ', A ' + _f3(p.A) + ', B ' + _f3(p.B) + ', C ' + _f3(p.C) + '}';
     _progWalk(pd, (t, s) => {
       if (t === 'move') L.push((s.src.type === 'SLIN' ? 'SLIN ' : s.src.type === 'PTP' ? 'PTP ' : 'LIN ') + kp(s.p) + (s.src.type === 'PTP' ? '' : ' C_DIS'));
@@ -286,12 +338,24 @@ function generateProgram(fmt, pd, name) {
     let tool = 1, wobj = 0, v = 0.167;
     const rt = p => { const q = _fmtABCToQuat(p.A, p.B, p.C);
       return '[[' + _f3(p.X) + ',' + _f3(p.Y) + ',' + _f3(p.Z) + '],[' + q.map(x => x.toFixed(6)).join(',') + '],[0,0,0,0],[9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]]'; };
-    const sd = () => '[' + Math.round(v * 1000) + ',500,5000,1000]', tw = () => 'tool' + tool + (wobj ? '\\WObj:=wobj' + wobj : '');
-    L.push('MODULE ' + name, '  PROC main()');
+    const tName = n => (pd.tools && pd.tools[n] && pd.tools[n].name) || (n === ABB_TOOL0 ? 'tool0' : 'tool' + n);
+    const wName = n => (typeof baseList !== 'undefined' && baseList[n - 1] && baseList[n - 1].abbName) || 'wobj' + n;
+    const sd = () => '[' + Math.round(v * 1000) + ',500,5000,1000]', tw = () => tName(tool) + (wobj ? '\\WObj:=' + wName(wobj) : '');
+    const fr = (x, y, z, A, B, C) => '[[' + _f3(x) + ',' + _f3(y) + ',' + _f3(z) + '],[' + _fmtABCToQuat(A, B, C).map(q => q.toFixed(6)).join(',') + ']]';
+    L.push('MODULE ' + name);
+    // Werkzeuge und Werkobjekte mit den Werten der Simulation deklarieren
+    const usedT = new Set(), usedW = new Set(); let ct = 1, cw = 0;
+    pd.steps.forEach(s => { if (s.type === 'tool') ct = s.n; if (s.type === 'base') cw = s.n || 0; if (s.type === 'move') { usedT.add(ct); if (cw) usedW.add(cw); } });
+    usedT.forEach(n => { if (n === ABB_TOOL0) return;
+      const t = (pd.tools && pd.tools[n]) || (typeof _tcpEntryForTool === 'function' ? _tcpEntryForTool(n) : null); if (!t) return;
+      L.push('  PERS tooldata ' + tName(n) + ' := [TRUE,' + fr(t.x || 0, t.y || 0, t.z || 0, t.a || 0, t.b || 0, t.c || 0) + ',[1,[0,0,1],[1,0,0,0],0,0,0]];'); });
+    usedW.forEach(n => { const b = typeof baseList !== 'undefined' && baseList[n - 1]; if (!b) return;
+      L.push('  PERS wobjdata ' + wName(n) + ' := [FALSE,TRUE,"",' + fr(b.x || 0, b.y || 0, b.z || 0, b.a || 0, b.b || 0, b.c || 0) + ',[[0,0,0],[1,0,0,0]]];'); });
+    L.push('  PROC main()');
     _progWalk(pd, (t, s) => {
       if (t === 'move') L.push('    ' + (s.src.type === 'PTP' ? 'MoveJ ' : 'MoveL ') + rt(s.p) + ', ' + sd() + ', z1, ' + tw() + ';');
       else if (t === 'circ') L.push('    MoveC ' + rt(s.via) + ', ' + rt(s.end) + ', ' + sd() + ', z1, ' + tw() + ';');
-      else if (t === 'ptpAxis') L.push('    MoveAbsJ [[' + s.angles.map(_f3).join(',') + '],[9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]], v500, fine, tool' + tool + ';');
+      else if (t === 'ptpAxis') L.push('    MoveAbsJ [[' + s.angles.map(_f3).join(',') + '],[9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]], v500, fine, ' + tName(tool) + ';');
       else if (t === 'velcp') v = +s.v || v;
       else if (t === 'tool') tool = s.n;
       else if (t === 'base') wobj = s.n || 0;

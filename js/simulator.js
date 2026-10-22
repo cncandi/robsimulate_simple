@@ -410,6 +410,7 @@ function parseKRL(code){
   function pushStep(ln,type,extra){steps.push({lineNum:ln,type,...extra,snapshot:snap()});}
   let curBase = 0; // aktiver BASE (BASE_DATA[n]); 0 = Welt-Nullframe
   let curTool = 1; // aktives TOOL (TOOL_DATA[n]); 1 = Standard
+  const tools = {}; // TOOL_DATA[n]={X..} im Programm → Werte für die Simulation
   // KRL-{X..} ist die Code-Koordinate -> als rel merken (Welt = rel + aktueller BASE-Offset, separat angewandt)
   function W(o){ o.rel={X:o.X,Y:o.Y,Z:o.Z,A:o.A,B:o.B,C:o.C}; o.baseN=curBase; o.toolN=curTool; return o; }
   for(let ln=0;ln<lines.length;ln++){
@@ -455,6 +456,7 @@ function parseKRL(code){
       pushStep(ln,'move',{posIdx:pi,label:'LIN'});continue;}
     let m;
     // ── Systemvariablen mit vollständigen Daten ──────────────────────────
+    if((m=line.match(/^TOOL_DATA\[(\d+)\]\s*=\s*\{([^}]*)\}/i))){const t=parsePos(m[2]),nm=(raw.split(';')[1]||'').trim();tools[+m[1]]={x:t.X,y:t.Y,z:t.Z,a:t.A,b:t.B,c:t.C,name:nm||('TOOL_DATA['+m[1]+']')};continue;}
     if((m=line.match(/^\$TOOL\s*=\s*TOOL_DATA\[(\d+)\]/i))){curTool=+m[1];pushStep(ln,'tool',{n:+m[1]});continue;}
     if((m=line.match(/^\$BASE\s*=\s*BASE_DATA\[(\d+)\]/i))){curBase=+m[1];pushStep(ln,'base',{n:+m[1]});continue;}
     if((m=line.match(/^\$VEL\.CP\s*=\s*([\d.]+)/i))){_velCP=parseFloat(m[1])||0.167;pushStep(ln,'velcp',{v:_velCP});continue;}
@@ -491,7 +493,7 @@ function parseKRL(code){
         pushStep(ln,'calc',{target:_target,expr:_expr});continue;}}
     pushStep(ln,'other',{raw:line});
   }
-  return{steps,positions,finalState:{variables:{...vars},digitalIn:{...din},digitalOut:{...dout},analogOut:{...anout},analogIn:{...anin}}};
+  return{steps,positions,tools,finalState:{variables:{...vars},digitalIn:{...din},digitalOut:{...dout},analogOut:{...anout},analogIn:{...anin}}};
 }
 // ═══════════════════════════════════════════════════
 // THREE.JS SETUP (Z-up scene = KUKA Robot CS)
@@ -849,6 +851,8 @@ function ensureBasesForProgram() {
 
 // TCP-Eintrag fuer eine Tool-Nummer (Fallback: erster Eintrag)
 function _tcpEntryForTool(toolN) {
+  var pt = parsedData && parsedData.tools;            // im Programm definierte Werkzeuge haben Vorrang
+  if (pt && pt[toolN || 1]) return pt[toolN || 1];
   return tcpList[(toolN || 1) - 1] || tcpList[0] || null;
 }
 // TCP_DEF (per Property-Mutation, da const) auf das TCP der Tool-Nummer setzen
@@ -870,6 +874,12 @@ function _toolsAreUniform(positions) {
 function setActiveTool(toolN) {
   if (!toolN) toolN = 1;
   _applyToolToTCPDEF(toolN);
+  var el = document.getElementById('tool-label'), t = _tcpEntryForTool(toolN);
+  if (el && t) {
+    var f = function(v) { return (Math.round((v || 0) * 10) / 10).toString(); };
+    var pt = parsedData && parsedData.tools && parsedData.tools[toolN];
+    el.textContent = (t.name || ('TOOL ' + toolN)) + (pt ? '' : ' (Roboter)') + ' · X ' + f(t.x) + ' Y ' + f(t.y) + ' Z ' + f(t.z) + ' · A ' + f(t.a) + ' B ' + f(t.b) + ' C ' + f(t.c);
+  }
   // STL-Umschaltung pro Tool folgt via robmodel-XML
 }
 // Welt = Code-Koordinate (rel) + aktueller BASE-Offset. Nur Transformation, kein Neuzeichnen.

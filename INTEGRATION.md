@@ -148,6 +148,7 @@ Nicht ausgewertet: Steuerstrukturen (IF/LOOP/FOR …), Unterprogramme, Interrupt
 - **ABB RAPID**: `MoveL/MoveJ/MoveC/MoveAbsJ`, benannte und eingebettete robtargets, `Offs()`, speeddata (`vNNN`, eigene), `toolN`, `\WObj:=wobjN`, `SetDO`, `WaitDI`, `WaitTime`, `Stop`. Quaternion → A,B,C.
 - **FANUC TP (.ls)**: `/POS`-Abschnitt (UF, UT, X…R oder J1…J6), `J/L/C P[n]` mit mm/sec, cm/min, inch/min, %; `UTOOL_NUM`, `UFRAME_NUM`, `DO[]`, `WAIT DI[]`, `WAIT sec`, `PAUSE`. W,P,R → C,B,A.
 - **APT CL-Data**: `GOTO` (mit Werkzeugachse i,j,k), `FROM`, `RAPID`, `FEDRAT` (MMPM/IPM), `CIRCLE`, `LOADTL`, `TLAXIS`, `UNITS`. Koordinaten = BASE 1. APT hat keine Drehung um die Werkzeugachse → A = 0, mit der Robot Map optimieren; „Übernehmen“ schreibt dann KUKA.
+- **Werkzeuge/Werkobjekte im Programm**: ABB `tooldata` (tframe) und `wobjdata` (uframe∘oframe) sowie KRL `TOOL_DATA[n]={X…}` werden für die Simulation übernommen und haben Vorrang vor den Werkzeugen des Roboters. `tool0` = Flansch, `wobj0` = Welt. Werkzeugrahmen: Z aus dem Flansch (ABB tool0 = KUKA FLANGE). wobjdata erscheinen als BASE-Einträge mit ihrem Namen; „Teilposition optimieren“ schreibt die neue Lage in die wobjdata-Deklaration. `parsedData.tools` = `{nr: {x,y,z,a,b,c,name}}` (ABB-Werkzeuge ab Nr. 101, tool0 = 100). Die Fußzeile zeigt das aktive Werkzeug.
 - Umschalten des Formats erzeugt das Programm neu: Kommentare und nicht ausgewertete Zeilen gehen dabei verloren.
 
 ## 6. Roboterformat (RobLib-ZIP)

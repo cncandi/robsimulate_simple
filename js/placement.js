@@ -247,17 +247,30 @@ function _plcShow() {
     + '<button class="btn" onclick="plcClose()">Verwerfen</button></div>';
   _plcBox(h);
 }
+// ABB: geänderte BASE in die wobjdata-Deklaration des Programms zurückschreiben (uframe = neue Lage, oframe = 0)
+function _plcWriteWobj(e) {
+  if (typeof progFmt === 'undefined' || progFmt !== 'abb' || !e || !e.abbName) return false;
+  var re = new RegExp('((?:TASK\\s+)?(?:CONST|VAR|PERS)\\s+wobjdata\\s+' + e.abbName + '\\s*:=\\s*)\\[([\\s\\S]*?)\\]\\s*;', 'i');
+  var code = _codeEl.value, m = code.match(re); if (!m) return false;
+  var head = m[2].split(/\[\s*\[/)[0];   // robhold, ufprog, ufmec unverändert
+  var q = _fmtABCToQuat(e.a || 0, e.b || 0, e.c || 0).map(function(v) { return v.toFixed(7); }).join(',');
+  var lit = '[' + head + '[[' + _f3(e.x) + ',' + _f3(e.y) + ',' + _f3(e.z) + '],[' + q + ']],[[0,0,0],[1,0,0,0]]];';
+  _codeEl.value = code.replace(re, m[1] + lit);
+  if (typeof rebuildGutter === 'function') rebuildGutter();
+  return true;
+}
 function plcApply() {
   var r = _plc.res; if (!r) return;
   var e = baseList[r.bn - 1]; _plc.undo = { bn: r.bn, base: { x: e.x, y: e.y, z: e.z, a: e.a, b: e.b, c: e.c } };
   ['x', 'y', 'z', 'a', 'b', 'c'].forEach(function(k) { e[k] = _plcR(r.base[k], 3); });
+  var wr = _plcWriteWobj(e);
   baseNavTo(r.bn - 1); syncBaseFrameGroups(); applyBase();
-  _plcBox('<div class="plc-msg">BASE ' + r.bn + ' gesetzt: X ' + _plcR(e.x, 1) + ', Y ' + _plcR(e.y, 1) + ', A ' + _plcR(e.a, 1) + '°. Roboterstellung wird neu berechnet.</div>'
+  _plcBox('<div class="plc-msg">' + (wr ? 'wobjdata ' + e.abbName + ' im Programm' : 'BASE ' + r.bn) + ' gesetzt: X ' + _plcR(e.x, 1) + ', Y ' + _plcR(e.y, 1) + ', A ' + _plcR(e.a, 1) + '°. Roboterstellung wird neu berechnet.</div>'
     + '<div class="row" style="margin-top:6px"><button class="btn" onclick="plcUndo()">Rückgängig</button><button class="btn" onclick="plcClose()">Schließen</button></div>');
 }
 function plcUndo() {
   var u = _plc.undo; if (!u) return;
-  Object.assign(baseList[u.bn - 1], u.base); _plc.undo = null;
+  Object.assign(baseList[u.bn - 1], u.base); _plc.undo = null; _plcWriteWobj(baseList[u.bn - 1]);
   baseNavTo(u.bn - 1); syncBaseFrameGroups(); applyBase(); plcClose();
 }
 function plcClose() { _plc.run++; var el = document.getElementById('plc-box'); if (el) { el.style.display = 'none'; el.innerHTML = ''; } }
