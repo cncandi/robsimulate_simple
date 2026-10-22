@@ -1443,6 +1443,19 @@ function _ikJumpCheck() {
   el.onclick = function() { pauseSim(); applySimT(Math.max(0, f.i - 1)); const si = parsedData.stepOfPos ? parsedData.stepOfPos[f.i - 1] : -1; if (si >= 0) applyStep(si); };
 }
 
+// Nachschliff nach dem DP-Planer: die DP-Lösung legt die Konfiguration fest (Ellbogen/Hand/Umdrehung),
+// die analytische IK macht jeden Punkt in genau dieser Konfiguration exakt (DP allein: bis ~30 mm Abweichung)
+function _ikTableRefine(positions) {
+  for (let i = 0; i < ikTable.length; i++) {
+    const e = ikTable[i], p = positions[i]; if (!e || !e.angles || !p) continue;
+    if (typeof _applyToolToTCPDEF === 'function') _applyToolToTCPDEF(p.toolN || 1);
+    const an = solveIKAnalytic(p.X, p.Y, p.Z, p.A, p.B, p.C, e.angles);
+    if (!an || !an.ok) continue;
+    const q = an.angles.map((v, j) => e.angles[j] + shortestAngleDiff(e.angles[j], v));
+    // nur übernehmen, wenn die Konfiguration erhalten bleibt (keine Achse springt um mehr als 30°)
+    if (q.every((v, j) => Math.abs(v - e.angles[j]) < 30) || !e.ok) ikTable[i] = { angles: q, score: an.score, ok: true };
+  }
+}
 let _ikGen = 0;  // laufende Berechnung abbrechen, wenn eine neue startet
 function computeIKTableProgressive(positions, done) {
   const gen = ++_ikGen;
@@ -1456,6 +1469,7 @@ function computeIKTableProgressive(positions, done) {
     setTimeout(function(){
       if (gen !== _ikGen) return;
       try { _ikTableDPSolver(positions, N); } catch(e) { _ikTableFallbackDP(positions, N); }
+      _ikTableRefine(positions);
       buildTrajectory(positions, ikTable);
       parseProgress(100, 'fertig'); done && done();
     }, 20);
