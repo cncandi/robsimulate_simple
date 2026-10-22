@@ -263,9 +263,10 @@ function plcApply() {
   var r = _plc.res; if (!r) return;
   var e = baseList[r.bn - 1]; _plc.undo = { bn: r.bn, base: { x: e.x, y: e.y, z: e.z, a: e.a, b: e.b, c: e.c } };
   ['x', 'y', 'z', 'a', 'b', 'c'].forEach(function(k) { e[k] = _plcR(r.base[k], 3); });
-  var wr = _plcWriteWobj(e);
+  var wr = _plcWriteWobj(e), virt = parsedData.virtBase;
   baseNavTo(r.bn - 1); syncBaseFrameGroups(); applyBase();
-  _plcBox('<div class="plc-msg">' + (wr ? 'wobjdata ' + e.abbName + ' im Programm' : 'BASE ' + r.bn) + ' gesetzt: X ' + _plcR(e.x, 1) + ', Y ' + _plcR(e.y, 1) + ', A ' + _plcR(e.a, 1) + '°. Roboterstellung wird neu berechnet.</div>'
+  _plcBox('<div class="plc-msg">' + (wr ? 'wobjdata ' + e.abbName + ' im Programm' : 'BASE ' + r.bn) + ' gesetzt: X ' + _plcR(e.x, 1) + ', Y ' + _plcR(e.y, 1) + ', A ' + _plcR(e.a, 1) + '°. Roboterstellung wird neu berechnet.'
+    + (virt ? ' Nur Simulation: Das Programm hat kein Werkobjekt – auf dem Roboter das Teil entsprechend aufspannen oder ein Werkobjekt mit diesen Werten anlegen.' : '') + '</div>'
     + '<div class="row" style="margin-top:6px"><button class="btn" onclick="plcUndo()">Rückgängig</button><button class="btn" onclick="plcClose()">Schließen</button></div>');
 }
 function plcUndo() {

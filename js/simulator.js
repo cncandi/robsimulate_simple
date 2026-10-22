@@ -2576,7 +2576,12 @@ function parseAndLoad(){
   parsedData.stepOfPos=new Int32Array(N).fill(-1);
   parsedData.steps.forEach((s,i)=>{if(s.type==='move'&&parsedData.stepOfPos[s.posIdx]<0)parsedData.stepOfPos[s.posIdx]=i;});
   _gutActive=-1;
+  // Programm ohne BASE/Werkobjekt (Koordinaten im Roboter-Nullpunkt, z. B. ABB wobj0): BASE 1 dient im
+  // Simulator als Teillage, damit das Teil verschoben/optimiert werden kann. Das Programm bleibt unverändert.
+  parsedData.virtBase = !parsedData.positions.some(p => p.baseN > 0) && !parsedData.steps.some(s => s.type === 'base' && s.n > 0);
+  if (parsedData.virtBase) parsedData.positions.forEach(p => { if (p.rel && isFinite(p.rel.X)) p.baseN = 1; });
   ensureBasesForProgram(); // Eintraege fuer alle referenzierten BASE_DATA[n] sicherstellen
+  { const h = document.getElementById('base-virt'); if (h) h.style.display = parsedData.virtBase && parsedData.positions.length ? '' : 'none'; }
   renderTcpNav(); renderBaseNav(); _showProgInfo();
   if (progFmt === 'abb' && ((parsedData.missing || []).length || (parsedData.loads || []).length)) setTimeout(function() { _resolveModules(!!_resolveModules._ask); }, 0);
   bakeBaseOffset(); // Code-Koordinaten + jeweils aktiver BASE-Offset pro Punkt -> Welt

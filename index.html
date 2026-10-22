@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261022k">
+<link rel="stylesheet" href="./css/simulator.css?v=20261022l">
 </head>
 <body>
 
@@ -160,6 +160,7 @@
         <span>C(X)</span><input class="inp" id="base-c" type="number" value="0" step="1" oninput="updateBaseDef()"><span>°</span>
       </div>
       <div class="hint" style="margin-top:8px">Bahn und Zielpunkte verschieben sich sofort, auch per Mausrad über dem Feld. Die Roboterstellung wird kurz danach automatisch neu berechnet.</div>
+      <div class="hint" id="base-virt" style="display:none;margin-top:8px;color:var(--teal)">Programm ohne BASE/Werkobjekt: BASE 1 verschiebt das Teil nur in der Simulation, das Programm bleibt unverändert.</div>
       <button class="btn" style="margin-top:8px;width:100%" onclick="plcStart()" title="Ursache der Probleme ermitteln und beste Lage des Teils suchen (X, Y, Drehung um Z; Z bleibt)">Teilposition optimieren</button>
       <div id="plc-box" class="plc-box" style="display:none"></div>
     </div>
@@ -269,9 +270,9 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261022k"></script>
-<script src="./js/formats.js?v=20261022k"></script>
-<script src="./js/simulator.js?v=20261022k"></script>
-<script src="./js/placement.js?v=20261022k"></script>
+<script src="./js/dp-solver.js?v=20261022l"></script>
+<script src="./js/formats.js?v=20261022l"></script>
+<script src="./js/simulator.js?v=20261022l"></script>
+<script src="./js/placement.js?v=20261022l"></script>
 </body>
 </html>
