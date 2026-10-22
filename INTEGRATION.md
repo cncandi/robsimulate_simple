@@ -12,6 +12,7 @@ Reine Browser-Anwendung ohne Build-Schritt und ohne Server-Logik. Vier Dateien, 
 | `css/simulator.css` | Gestaltung (16 KB) |
 | `js/simulator.js` | Kinematik, IK, KRL-Parser, Simulation, Robot Map, Bedienung (159 KB) |
 | `js/formats.js` | Parser/Generatoren ABB RAPID, FANUC TP, APT CL-Data |
+| `js/placement.js` | Teilposition optimieren (BASE X/Y/Drehung um Z) |
 | `js/dp-solver.js` | globaler IK-Pfadplaner für Programme bis 150 Punkte (9 KB) |
 
 Funktionen: Roboter aus der RobLib-Bibliothek, Simulation von KUKA KRL, ABB RAPID, FANUC TP und APT, BASE-Verwaltung, Robot Map
@@ -107,6 +108,13 @@ Alle Winkel in Grad, Längen in mm. `t` = Satzposition 0 … N−1 (Kommazahl = 
 | `baseList[n] = {x,y,z,a,b,c,name}` | BASE_DATA[n+1] |
 | `baseNavTo(n)` | BASE n in der Eingabe anzeigen |
 | `applyBase()` | Bahn sofort verschieben, IK 0,7 s später automatisch neu |
+
+### Teilposition
+| Aufruf | Wirkung |
+|---|---|
+| `plcStart()` | Ursache ermitteln und beste Lage suchen (BASE X, Y, A; Z bleibt), Ergebnis im Base-Bereich |
+| `_plc.res` | `{bn, base:{x,y,z,a,b,c}, before, after, diag}` – `before/after`: `{bad, badProg, jumps, n, cats}` |
+| `plcApply()` / `plcUndo()` | Vorschlag übernehmen / zurücknehmen |
 
 ### Simulation und Ansicht
 | Aufruf | Wirkung |

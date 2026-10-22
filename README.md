@@ -22,6 +22,7 @@ Live: https://cnc-technik.de/robsimul/simple/
 - `css/simulator.css` – Styles
 - `js/simulator.js` – Kinematik, IK, KRL-Parser, Simulation, A-Plot
 - `js/formats.js` – Parser und Generatoren ABB, FANUC, APT
+- `js/placement.js` – Teilposition optimieren (Ursache Reichweite/Kollision/Achsgrenze, beste BASE-Lage)
 - `js/dp-solver.js` – globaler IK-Pfadplaner
 
 Die Rechenkerne (FK/IK, Trajektorie, DP-Planer, Reachability-Scan) sind unverändert aus RobSimul übernommen;

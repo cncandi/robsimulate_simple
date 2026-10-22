@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261022f">
+<link rel="stylesheet" href="./css/simulator.css?v=20261022g">
 </head>
 <body>
 
@@ -112,6 +112,7 @@
       <div class="card-head"><svg class="ico"><use href="#i-pulse"/></svg>Ablauf</div>
       <div class="info-line" id="marker-info"></div>
       <div class="info-line warn" id="sim-warn" style="display:none" title="Klicken: zur ersten Stelle springen"></div>
+      <button class="btn" id="plc-quick" style="display:none;margin-top:6px;width:100%" onclick="plcStart()" title="Prüfen, ob die Lage des Teils (BASE) die Ursache ist, und eine bessere Lage suchen">Teilposition prüfen und optimieren</button>
       <div class="kv" style="margin:10px 0 12px">
         <div><b id="pos-v">— / —</b><span>Satz</span></div>
         <div><b id="tcp-vel-v">0 mm/min</b><span>TCP-Vorschub</span></div>
@@ -158,6 +159,8 @@
         <span>C(X)</span><input class="inp" id="base-c" type="number" value="0" step="1" oninput="updateBaseDef()"><span>°</span>
       </div>
       <div class="hint" style="margin-top:8px">Bahn und Zielpunkte verschieben sich sofort, auch per Mausrad über dem Feld. Die Roboterstellung wird kurz danach automatisch neu berechnet.</div>
+      <button class="btn" style="margin-top:8px;width:100%" onclick="plcStart()" title="Ursache der Probleme ermitteln und beste Lage des Teils suchen (X, Y, Drehung um Z; Z bleibt)">Teilposition optimieren</button>
+      <div id="plc-box" class="plc-box" style="display:none"></div>
     </div>
     </div>
   </aside>
@@ -237,8 +240,9 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261022f"></script>
-<script src="./js/formats.js?v=20261022f"></script>
-<script src="./js/simulator.js?v=20261022f"></script>
+<script src="./js/dp-solver.js?v=20261022g"></script>
+<script src="./js/formats.js?v=20261022g"></script>
+<script src="./js/simulator.js?v=20261022g"></script>
+<script src="./js/placement.js?v=20261022g"></script>
 </body>
 </html>

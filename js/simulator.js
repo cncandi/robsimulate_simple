@@ -1447,6 +1447,7 @@ function _ikJumpCheck() {
   // Kollision der simulierten Stellung mit dem gedruckten Teil
   const coll = [];
   for (let i = 0; i < ikTable.length; i++) { const a = ikTable[i] && ikTable[i].angles; if (a && _aCollides(_aNormQ(a), i)) coll.push(i); }
+  const qb = document.getElementById('plc-quick'); if (qb) qb.style.display = (_ikJumps.length || coll.length) ? '' : 'none';
   if (!el) return;
   if (!_ikJumps.length && !coll.length) { el.style.display = 'none'; return; }
   const msgs = []; let f;
