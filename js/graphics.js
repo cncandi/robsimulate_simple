@@ -205,6 +205,15 @@
     ssao.kernelRadius = 60;             // mm
     ssao.kernelSize = 32;
     // Der Schattenboden bleibt im Normalen-Durchgang: ohne Fläche wertet die SSAO den leeren Hintergrund als verdeckt.
+    // Beschriftungen (Sprites), Overlays ohne Tiefentest und stark transparente Flächen nicht in die AO aufnehmen
+    var ov = ssao.overrideVisibility.bind(ssao);
+    ssao.overrideVisibility = function () {
+      ov();
+      this.scene.traverse(function (o) {
+        var m = o.material;
+        if (o.isSprite || (o.isMesh && m && !Array.isArray(m) && (m.depthTest === false || (m.transparent && m.opacity < 0.5)))) o.visible = false;
+      });
+    };
     comp.addPass(ssao);
     fxaa = new THREE.ShaderPass(THREE.FXAAShader);
     comp.addPass(fxaa);
