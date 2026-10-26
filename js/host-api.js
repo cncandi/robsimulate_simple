@@ -112,6 +112,7 @@
   function getState() {
     return {
       api: API_VERSION,
+      theme: document.documentElement.getAttribute('data-theme') || 'industrial',
       view: curView, projection: projMode, render: renderMode, path: pathMode, aplot: aplotVisible(),
       ui: uiState(),
       format: progFmt, points: parsedData.positions.length, steps: (parsedData.steps || []).length,
@@ -139,6 +140,11 @@
       if (!(f > 0)) throw new Error('ungültiger Zoom: ' + v); zoomBy(f);
     },
     fit: function () { fitView(); },
+    theme: function (v) {      // dark | light | industrial | toggle (auch dunkel/hell/industrie)
+      var m = { dunkel: 'dark', hell: 'light', industrie: 'industrial', standard: 'dark' }, t = lc(v);
+      if (t === 'toggle') { cycleTheme(); return; }
+      if (!setTheme(m[t] || t)) throw new Error('unbekanntes Theme: ' + v + ' (dark, light, industrial)');
+    },
     path: function (v) { var n = PATH_ALIAS[lc(v)] || lc(v); if (!/^(all|upto|none)$/.test(n)) throw new Error('unbekannte G-Code-Anzeige: ' + v); setPathMode(n); },
     aplot: function (v) { setAPlot(bool(v, aplotVisible())); },
     ui: function (part, v) {    // part: Bereich oder Liste "sim,base"; v: on|off|toggle

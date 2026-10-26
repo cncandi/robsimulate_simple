@@ -6,8 +6,13 @@
 <title>RobSimul Simple · cnc-technik.de</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261026d">
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;600;700&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
+<script>
+// Theme vor dem ersten Zeichnen setzen (kein Aufblitzen): URL ?theme=… > gespeichert > industrial
+(function(){var t=null;try{t=new URLSearchParams(location.search).get('theme')||localStorage.getItem('robsimSimple.theme');}catch(e){}
+if(!/^(dark|light|industrial)$/.test(t||''))t='industrial';document.documentElement.setAttribute('data-theme',t);})();
+</script>
+<link rel="stylesheet" href="./css/simulator.css?v=20261026e">
 </head>
 <body>
 
@@ -55,6 +60,7 @@
   <button class="hbtn" onclick="saveProgram()" title="Programm als .src speichern"><svg class="ico"><use href="#i-save"/></svg>Speichern</button>
   <input type="file" id="prog-file-in" multiple accept=".src,.krl,.dat,.mod,.prg,.modx,.ls,.apt,.cl,.cls,.aptsource,.clt,.txt" style="display:none">
   <div class="hright">© CAD/CAM Systeme Datentechnik Reitz</div>
+  <button class="hbtn theme-btn" id="theme-btn" onclick="cycleTheme()" title="Darstellung wechseln: Dunkel, Hell, Industrie"><span class="sw"><i></i><i></i><i></i></span><span id="theme-lbl">Industrie</span></button>
 </header>
 
 <nav class="toolbar">
@@ -282,10 +288,10 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261026c"></script>
-<script src="./js/formats.js?v=20261026c"></script>
-<script src="./js/simulator.js?v=20261026c"></script>
-<script src="./js/placement.js?v=20261026c"></script>
-<script src="./js/host-api.js?v=20261026d"></script>
+<script src="./js/dp-solver.js?v=20261026e"></script>
+<script src="./js/formats.js?v=20261026e"></script>
+<script src="./js/simulator.js?v=20261026e"></script>
+<script src="./js/placement.js?v=20261026e"></script>
+<script src="./js/host-api.js?v=20261026e"></script>
 </body>
 </html>

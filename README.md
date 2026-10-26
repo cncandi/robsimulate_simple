@@ -15,7 +15,7 @@ Live: https://cnc-technik.de/robsimul/simple/
 - Ellbogen-Singularität: Streckwinkel aus den Achsmaßen berechnet (KR8 ca. 18°), nicht pauschal A3 = ±90°.
 - 3D-Ansicht: Standardansichten Vorne/Hinten/Links/Rechts/Oben/Unten/Isometrisch, 
   Perspektive/Orthografisch, Schattiert/Drahtmodell, Zoom +/−, Einpassen; Steuerung aus Host-Software über `RobSim` (siehe INTEGRATION.md 4a); Maus: Drehen (rechte Taste), Verschieben (mittlere Taste), Zoom (Rad); linke Taste ohne Kamerafunktion
-- Oberfläche im Stil von P3D-SO (Farben, Toolbar mit Icon über Label, Panels, Statusleiste)
+- Oberfläche im Stil von P3D-SO (Toolbar mit Icon über Label, Panels, Statusleiste) mit den drei Themes von P3D-SO: Dunkel, Hell, Industrie (Kopfzeile, `?theme=…` oder `RobSim.cmd('theme',…)`); 3D-Szene und Robot Map folgen dem Theme
 
 ## Dateien
 - `index.html` – Oberfläche

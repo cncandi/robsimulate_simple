@@ -182,6 +182,7 @@ Der rechte Bereich verschwindet automatisch, wenn `sim`, `base` und `tcp` aus si
 | `embed=1` | nur 3D-Fenster mit Statuszeile: `header`, `toolbar`, `editor`, `sim`, `base`, `tcp` aus |
 | `hide=a,b,…` | diese Bereiche aus |
 | `show=a,b,…` | diese Bereiche an (wird nach `embed` und `hide` angewendet) |
+| `theme=dark\|light\|industrial` | Theme (wie P3D-Slicer-Online: Dunkel, Hell, Industrie) |
 | `view=…`, `projection=…`, `render=…`, `path=…`, `aplot=1` | Startzustand |
 
 Beispiele:
@@ -211,6 +212,7 @@ Ungültige Werte lösen einen Fehler aus (`Error('unbekannte Ansicht: …')`).
 | `render` | `shaded` \| `wireframe` \| `toggle` | Schattiert / Drahtmodell |
 | `zoom` | `in` \| `out` \| Faktor (z. B. `0.8` = näher, `1.25` = weiter) | Zoom + / Zoom − |
 | `fit` | – | Alles in Bild (Einpassen) |
+| `theme` | `dark` \| `light` \| `industrial` \| `toggle` (auch `dunkel` `hell` `industrie`) | Darstellung wechseln (Kopfzeile) |
 | `path` | `all` \| `upto` \| `none` | Anzeige G-Code / G-Code bis Position / Anzeige aus |
 | `aplot` | `on` \| `off` \| `toggle` | Anzeige A-Plot (Robot Map) |
 | `ui` | Bereich oder Liste (`"sim,base"`), Wert `on` \| `off` \| `toggle` | Bereiche ein-/ausblenden (Liste siehe „Bereiche einzeln ein-/ausblenden“) |
@@ -270,7 +272,7 @@ erhalten, bei neuen Einträgen 0. Nach jeder Änderung rechnet das Modul die IK 
 
 Zustand (`RobSim.getState()` und Ergebnis jedes Befehls):
 ```json
-{"api":1,"view":"iso","projection":"persp","render":"shaded","path":"all","aplot":false,
+{"api":1,"theme":"industrial","view":"iso","projection":"persp","render":"shaded","path":"all","aplot":false,
  "ui":{"header":false,"toolbar":false,"editor":false,"sim":false,"base":false,"tcp":true,"statusbar":true,"legend":true,"hint":true,
        "tb-view":true,"tb-proj":true,"tb-render":true,"tb-zoom":true,"tb-path":true,"tb-aplot":true,"panel":true,"aplot":false},
  "format":"kuka","points":120,"steps":130,"t":0,"step":0,"line":1,
@@ -370,6 +372,7 @@ RobSim("zoom", "in");  RobSim("path", "none");       RobSim("aplot", "on");
 | Schattiert / Drahtmodell | `render` `shaded` / `wireframe` |
 | Zoom + / Zoom − | `zoom` `in` / `out` |
 | Alles in Bild | `fit` |
+| Theme der Host-Software übernehmen | `theme` `dark` / `light` / `industrial` |
 | Anzeige A-Plot | `aplot` `toggle` (oder `on`/`off`) |
 | Anzeige G-Code / G-Code bis / Anzeige aus | `path` `all` / `upto` / `none` |
 | Play / Rückwärts / Stop | `play` `fwd` / `back`, `pause` |
@@ -421,6 +424,7 @@ Bibliotheksliste: `GET …/roblib/api.php?action=list` → `{ok, count, robots:[
 | `robsimSimple.robot` | zuletzt gewählter Roboter `{name, zip_url}` oder `{name:'default'}` |
 | `robsimSimple.ui` | ausgeblendete Bereiche |
 | `robsimSimple.fmt` | gewähltes Programmformat |
+| `robsimSimple.theme` | gewähltes Theme (Standard `industrial`) |
 
 Kein Server-Speicher, keine Cookies, keine Anmeldung.
 

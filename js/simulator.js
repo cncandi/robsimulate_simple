@@ -510,7 +510,7 @@ const _codeEl=document.getElementById('code-input'), _gutEl=document.getElementB
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(window.devicePixelRatio);
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x1b1b1d);
+scene.background=new THREE.Color(0x1b1b1d);   // wird von applyTheme() aus --scene-bg gesetzt
 
 const perspCam=new THREE.PerspectiveCamera(50,1,1,80000);
 perspCam.up.set(0,0,1);
@@ -526,9 +526,31 @@ sun.position.set(1000,1000,2000);scene.add(sun);
 const fill=new THREE.DirectionalLight(0xffffff,0.4);fill.position.set(-1000,-500,1000);scene.add(fill);
 
 // Grid (horizontal, Z=0)
-const grid=new THREE.GridHelper(8000,40,0x77819b,0x494e5c);
+let grid=new THREE.GridHelper(8000,40,0x77819b,0x494e5c);
 grid.rotation.x=Math.PI/2;
 scene.add(grid);
+
+// ── Themes: dark | light | industrial (Farben in css/simulator.css) ──
+const THEMES=['dark','light','industrial'], THEME_LBL={dark:'Dunkel',light:'Hell',industrial:'Industrie'}, _THEME_KEY='robsimSimple.theme';
+function _cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function applyTheme(init){
+  const t=document.documentElement.getAttribute('data-theme')||'industrial';
+  scene.background=new THREE.Color(_cssVar('--scene-bg')||'#1b1b1d');
+  const g=new THREE.GridHelper(8000,40,new THREE.Color(_cssVar('--scene-grid1')||'#77819b'),new THREE.Color(_cssVar('--scene-grid2')||'#494e5c'));
+  g.rotation.x=Math.PI/2; g.visible=grid.visible; scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); grid=g; scene.add(grid);
+  const l=document.getElementById('theme-lbl'); if(l) l.textContent=THEME_LBL[t]||t;
+  if(!init) aPlotInvalidate();
+  requestRender();
+}
+function setTheme(t){
+  if(THEMES.indexOf(t)<0) return false;
+  document.documentElement.setAttribute('data-theme',t);
+  try{ localStorage.setItem(_THEME_KEY,t); }catch(e){}
+  applyTheme(); if(typeof _robsimEmitState==='function') _robsimEmitState();
+  return true;
+}
+function cycleTheme(){ const t=document.documentElement.getAttribute('data-theme')||'industrial'; setTheme(THEMES[(THEMES.indexOf(t)+1)%THEMES.length]); }
+applyTheme(true);
 
 // World origin frame
 function wArrow(d,col,len,org){scene.add(new THREE.ArrowHelper(new THREE.Vector3(...d).normalize(),new THREE.Vector3(...org),len,col,len*.18,len*.09));}
@@ -2722,6 +2744,13 @@ const AMAP_COL = {
   coll:  [255, 140, 26],  // orange: Kollision Roboter/Werkzeug mit gedrucktem Teil
 };
 const AMAP_KIND_TXT = { 1:'unerreichbar', 2:'Achsgrenze', 3:'Singularität', 4:'Achssprung', 5:'Kollision' };
+// Farben der Robot Map aus dem aktiven Theme (css/simulator.css, --ap-*)
+function _aCols() {
+  var v = function (n, d) { return (typeof _cssVar === 'function' && _cssVar(n)) || d; };
+  return { bg: v('--ap-bg', '#242426'), plot: v('--ap-plot', '#18181a'), line: v('--ap-line', 'rgba(255,255,255,.08)'), line2: v('--ap-line2', 'rgba(255,255,255,.035)'),
+    zero: v('--ap-zero', 'rgba(200,200,210,.35)'), frame: v('--ap-frame', '#505055'), txt: v('--ap-txt', '#9a9a9f'), txtS: v('--ap-txt-strong', '#e2e2e4'),
+    dash: v('--ap-dash', 'rgba(200,204,214,.75)'), path: v('--ap-path', '#3ddc84'), node: v('--ap-node', '#d8f03c'), nodeAct: v('--ap-node-act', '#ffffff') };
+}
 const AMAP_KIND_COL = { 1:'#ff4d6a', 2:'#ff4d6a', 3:'#ebc432', 4:'#ff9b3d', 5:'#ff8c1a' };
 
 var _aPlotDists = [];
@@ -2951,45 +2980,45 @@ function _aMapImage(nCol) {
 
 function _aDrawStatic(c, pos) {
   var G = _aG, L = _aTotal();
-  c.fillStyle = '#242426'; c.fillRect(0, 0, G.W, G.H);
-  c.fillStyle = '#18181a'; c.fillRect(G.ML, G.MT, G.CW, G.CH);
+  var AC = _aCols(); c.fillStyle = AC.bg; c.fillRect(0, 0, G.W, G.H);
+  c.fillStyle = AC.plot; c.fillRect(G.ML, G.MT, G.CW, G.CH);
   if (_aMap) {
     var img = _aMapImage(Math.max(1, Math.round(G.CW)));
     c.imageSmoothingEnabled = false;
     // Zeile s liegt bei A = MIN + s·astep: Bildzeilen um eine halbe Zeile versetzt zentrieren
     var rowH = G.CH / (AMAP_MAX - AMAP_MIN) * _aMap.astep;
     c.drawImage(img, G.ML, G.MT - rowH / 2, G.CW, G.CH + rowH);
-    c.fillStyle = '#242426'; c.fillRect(G.ML, G.MT - rowH, G.CW, rowH); c.fillRect(G.ML, G.MT + G.CH, G.CW, rowH);
+    c.fillStyle = AC.bg; c.fillRect(G.ML, G.MT - rowH, G.CW, rowH); c.fillRect(G.ML, G.MT + G.CH, G.CW, rowH);
   }
   // Gitter A
   c.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono'); c.textAlign = 'right';
   for (let deg = -360; deg <= 360; deg += 45) {
     var y = _ay(deg), major = deg % 90 === 0;
-    c.strokeStyle = deg === 0 ? 'rgba(200,200,210,.35)' : major ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.035)';
+    c.strokeStyle = deg === 0 ? AC.zero : major ? AC.line : AC.line2;
     c.lineWidth = 1;
     c.beginPath(); c.moveTo(G.ML, y); c.lineTo(G.ML + G.CW, y); c.stroke();
-    if (major) { c.fillStyle = deg === 0 ? '#e2e2e4' : '#9a9a9f'; c.fillText(deg + '°', G.ML - 5, y + 3.5); }
+    if (major) { c.fillStyle = deg === 0 ? AC.txtS : AC.txt; c.fillText(deg + '°', G.ML - 5, y + 3.5); }
   }
   // Gitter Bahnlänge
-  var stepM = [0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100,200,500].find(function(s) { return L/1000/s <= 10; }) || 1000;
+  var stepM = [0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100,200,500].find(function(s) { return L/1000/s <= Math.max(2, Math.floor(G.CW / 72)); }) || 1000;   // Beschriftung passt zur Breite
   c.textAlign = 'center';
   for (let m = 0; m <= L/1000 + 1e-9; m += stepM) {
     var x = _ax(m * 1000);
-    c.strokeStyle = 'rgba(255,255,255,.06)'; c.beginPath(); c.moveTo(x, G.MT); c.lineTo(x, G.MT + G.CH); c.stroke();
-    c.fillStyle = '#9a9a9f'; c.fillText((stepM < 1 ? m.toFixed(2) : Math.round(m)) + ' m', x, G.MT + G.CH + 34);
+    c.strokeStyle = AC.line; c.beginPath(); c.moveTo(x, G.MT); c.lineTo(x, G.MT + G.CH); c.stroke();
+    c.fillStyle = AC.txt; c.fillText((stepM < 1 ? m.toFixed(2) : Math.round(m)) + ' m', x, G.MT + G.CH + 34);
   }
-  c.strokeStyle = '#505055'; c.lineWidth = 1; c.strokeRect(G.ML + .5, G.MT + .5, G.CW - 1, G.CH - 1);
+  c.strokeStyle = AC.frame; c.lineWidth = 1; c.strokeRect(G.ML + .5, G.MT + .5, G.CW - 1, G.CH - 1);
   // Problemstreifen unter der Karte
-  c.fillStyle = '#1b1b1d'; c.fillRect(G.ML, G.MT + G.CH + 6, G.CW, 10);
+  c.fillStyle = AC.plot; c.fillRect(G.ML, G.MT + G.CH + 6, G.CW, 10);
   c.save(); c.translate(12, G.MT + G.CH / 2); c.rotate(-Math.PI/2);
-  c.fillStyle = '#9a9a9f'; c.textAlign = 'center'; c.fillText('A [°]', 0, 0); c.restore();
+  c.fillStyle = AC.txt; c.textAlign = 'center'; c.fillText('A [°]', 0, 0); c.restore();
   if (!pos.length) {
-    c.fillStyle = '#9a9a9f'; c.font = '13px sans-serif'; c.fillText('Kein Programm geladen', G.ML + G.CW/2, G.MT + G.CH/2);
+    c.fillStyle = AC.txt; c.font = '13px sans-serif'; c.fillText('Kein Programm geladen', G.ML + G.CW/2, G.MT + G.CH/2);
     return;
   }
   // Programm-A (grau). Sprünge über 180° (Umbruch ±180) unterbrechen die Linie.
   if (_aLayers.prog) {
-    c.strokeStyle = 'rgba(200,204,214,.75)'; c.lineWidth = 1; c.setLineDash([3, 3]);
+    c.strokeStyle = AC.dash; c.lineWidth = 1; c.setLineDash([3, 3]);
     c.beginPath();
     for (let i = 0; i < pos.length; i++) {
       var px = _ax(_aPlotDists[i]), py = _ay(pos[i].A);
@@ -3008,14 +3037,15 @@ function _aDrawStatic(c, pos) {
 }
 
 function _aDrawPath(c) {
+  var AC = _aCols();
   if (!_aPath || !_aLayers.path) return;
-  c.strokeStyle = '#3ddc84'; c.lineWidth = 2;
+  c.strokeStyle = AC.path; c.lineWidth = 2;
   c.beginPath();
   _aPath.forEach(function(n, k) { var x = _ax(n.d), y = _ay(n.a); if (k) c.lineTo(x, y); else c.moveTo(x, y); });
   c.stroke();
   _aPath.forEach(function(n, k) {
     var x = _ax(n.d), y = _ay(n.a), act = _aDrag && _aDrag.idx === k;
-    c.fillStyle = act ? '#ffffff' : '#d8f03c';
+    c.fillStyle = act ? AC.nodeAct : AC.node;
     c.beginPath(); c.arc(x, y, act ? 5 : 3.5, 0, 2*Math.PI); c.fill();
   });
 }
