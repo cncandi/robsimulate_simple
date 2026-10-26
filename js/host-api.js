@@ -28,8 +28,8 @@
     switch (part) {
       case 'header': return !document.body.classList.contains('rs-hide-header');
       case 'toolbar': return !document.body.classList.contains('rs-hide-toolbar');
-      case 'editor': { var ep = document.querySelector('.ep'); return !!ep && !ep._panelClosed; }
-      case 'panel': { var sp = document.querySelector('.sim-panel'); return !!sp && !sp.classList.contains('closed'); }
+      case 'editor': return !document.body.classList.contains('rs-hide-editor');
+      case 'panel': return !document.body.classList.contains('rs-hide-panel');
       case 'sim': case 'base': case 'tcp': { var b = document.getElementById('sec-' + part); return !!b && b.style.display !== 'none'; }
     }
     return false;
@@ -38,8 +38,14 @@
     switch (part) {
       case 'header': document.body.classList.toggle('rs-hide-header', !on); break;
       case 'toolbar': document.body.classList.toggle('rs-hide-toolbar', !on); break;
-      case 'editor': if (uiVisible('editor') !== on) toggleLeftPanel(); break;
-      case 'panel': toggleRightPanel(!on); break;
+      case 'editor':   // ganz ausblenden inkl. Umschalter und Ziehgriff
+        document.body.classList.toggle('rs-hide-editor', !on);
+        if (on) { var ep = document.querySelector('.ep'); if (ep && ep._panelClosed) toggleLeftPanel(); }
+        break;
+      case 'panel':
+        document.body.classList.toggle('rs-hide-panel', !on);
+        if (on) toggleRightPanel(false);
+        break;
       case 'sim': case 'base': case 'tcp': {   // Abschnitt im rechten Bereich ganz ausblenden
         var b = document.getElementById('sec-' + part); if (!b) break;
         b.style.display = on ? '' : 'none'; if (b.previousElementSibling) b.previousElementSibling.style.display = on ? '' : 'none';
@@ -256,12 +262,14 @@
   }
 
   // ── Einbettungsmodus per URL: ?embed=1 (Kopfzeile+Toolbar aus), ?hide=header,toolbar,editor,panel
+  //    ?embed=1 = nur 3D-Fenster (Kopfzeile, Toolbar, Editor, rechter Bereich aus); ?show=editor,panel blendet wieder ein
   //    Startwerte: ?view=oben&projection=ortho&render=wireframe&path=upto&aplot=1
   function applyUrl() {
     var q = new URLSearchParams(location.search), hide = [];
-    if (q.get('embed') === '1') hide.push('header', 'toolbar');
+    if (q.get('embed') === '1') hide.push('header', 'toolbar', 'editor', 'panel');   // nur 3D-Fenster
     (q.get('hide') || '').split(',').forEach(function (h) { h = lc(h); if (h) hide.push(h); });
-    hide.forEach(function (h) { try { setUI(h, false); } catch (e) {} });
+    var show = (q.get('show') || '').split(',').map(lc);
+    hide.filter(function (h) { return show.indexOf(h) < 0; }).forEach(function (h) { try { setUI(h, false); } catch (e) {} });
     ['projection', 'render', 'path', 'view'].forEach(function (k) { if (q.has(k)) { try { cmd(k, q.get(k)); } catch (e) { console.warn(e.message); } } });
     if (q.has('aplot')) { try { cmd('aplot', q.get('aplot')); } catch (e) {} }
   }

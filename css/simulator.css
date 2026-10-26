@@ -240,3 +240,5 @@ input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;bac
 /* ── Einbettung (Host-Software): Bereiche ausblenden ──────── */
 body.rs-hide-header>header{display:none}
 body.rs-hide-toolbar>nav.toolbar{display:none}
+body.rs-hide-editor .ep,body.rs-hide-editor #ep-toggle-btn,body.rs-hide-editor #ep-resize-handle{display:none!important}
+body.rs-hide-panel .sim-panel,body.rs-hide-panel #sp-toggle-btn{display:none!important}

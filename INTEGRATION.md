@@ -160,11 +160,12 @@ Die Toolbar des Moduls wird dazu ausgeblendet, damit keine Bedienelemente doppel
 ### Einbettungsmodus (URL-Parameter)
 | Parameter | Wirkung |
 |---|---|
-| `embed=1` | Kopfzeile und Toolbar ausblenden |
-| `hide=header,toolbar,editor,panel` | einzelne Bereiche ausblenden (`editor` = Programm links, `panel` = Simulation/BASE/TCP rechts) |
+| `embed=1` | nur 3D-Fenster: Kopfzeile, Toolbar, Editor und rechter Bereich (Simulation/BASE/TCP) aus |
+| `show=editor,panel,…` | mit `embed=1`: diese Bereiche doch anzeigen |
+| `hide=header,toolbar,editor,panel,sim,base,tcp` | einzelne Bereiche ausblenden (`editor` = Programm links, `panel` = ganzer rechter Bereich, `sim`/`base`/`tcp` = einzelne Abschnitte) |
 | `view=…`, `projection=…`, `render=…`, `path=…`, `aplot=1` | Startzustand (Werte wie bei den Befehlen) |
 
-Beispiel: `index.html?embed=1&hide=editor,panel&view=iso&projection=ortho`
+Beispiele: `index.html?embed=1&view=iso&projection=ortho` (nur 3D), `index.html?embed=1&show=panel` (3D + Simulation/BASE/TCP)
 
 ### Mausbelegung im 3D-Fenster (fest)
 | Taste | Funktion |
