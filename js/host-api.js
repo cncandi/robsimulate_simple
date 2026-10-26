@@ -113,6 +113,7 @@
     return {
       api: API_VERSION,
       theme: document.documentElement.getAttribute('data-theme') || 'industrial',
+      quality: window.RSGfx ? RSGfx.quality() : 'standard',
       view: curView, projection: projMode, render: renderMode, path: pathMode, aplot: aplotVisible(),
       ui: uiState(),
       format: progFmt, points: parsedData.positions.length, steps: (parsedData.steps || []).length,
@@ -140,6 +141,12 @@
       if (!(f > 0)) throw new Error('ungültiger Zoom: ' + v); zoomBy(f);
     },
     fit: function () { fitView(); },
+    quality: function (v) {    // standard | high | max | toggle (auch hoch/maximal)
+      var m = { hoch: 'high', maximal: 'max', niedrig: 'standard' }, q = lc(v);
+      if (!window.RSGfx) throw new Error('Grafikmodul nicht geladen');
+      if (q === 'toggle') { RSGfx.cycle(); return; }
+      if (!RSGfx.setQuality(m[q] || q)) throw new Error('unbekannte Qualität: ' + v + ' (standard, high, max)');
+    },
     theme: function (v) {      // dark | light | industrial | toggle (auch dunkel/hell/industrie)
       var m = { dunkel: 'dark', hell: 'light', industrie: 'industrial', standard: 'dark' }, t = lc(v);
       if (t === 'toggle') { cycleTheme(); return; }

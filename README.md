@@ -24,6 +24,8 @@ Live: https://cnc-technik.de/robsimul/simple/
 - `js/formats.js` – Parser und Generatoren ABB, FANUC, APT
 - `js/placement.js` – Teilposition optimieren (Ursache Reichweite/Kollision/Achsgrenze, beste BASE-Lage)
 - `js/dp-solver.js` – globaler IK-Pfadplaner
+- `js/graphics.js` – Grafikqualität Standard/Hoch/Maximal (PBR, Studio-Umgebung, Schatten, ACES, SSAO, FXAA); Erweiterungen unter `js/vendor/three-r128/`
+- `js/host-api.js` – Host-Schnittstelle `RobSim`
 
 Die Rechenkerne (FK/IK, Trajektorie, DP-Planer, Reachability-Scan) sind unverändert aus RobSimul übernommen;
 die Ergebnisse wurden gegen RobSimul V0.84 abgeglichen.

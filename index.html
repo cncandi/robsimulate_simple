@@ -12,7 +12,7 @@
 (function(){var t=null;try{t=new URLSearchParams(location.search).get('theme')||localStorage.getItem('robsimSimple.theme');}catch(e){}
 if(!/^(dark|light|industrial)$/.test(t||''))t='industrial';document.documentElement.setAttribute('data-theme',t);})();
 </script>
-<link rel="stylesheet" href="./css/simulator.css?v=20261026e">
+<link rel="stylesheet" href="./css/simulator.css?v=20261026f">
 </head>
 <body>
 
@@ -31,6 +31,7 @@ if(!/^(dark|light|industrial)$/.test(t||''))t='industrial';document.documentElem
   <symbol id="i-ortho" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15"/><path d="M12 5v15M4 12.5h16"/></symbol>
   <symbol id="i-shaded" viewBox="0 0 24 24"><path d="M12 2.5l8.5 4.75v9.5L12 21.5l-8.5-4.75v-9.5z" fill="currentColor" fill-opacity=".35"/><path d="M3.5 7.25L12 12l8.5-4.75M12 12v9.5"/></symbol>
   <symbol id="i-wire" viewBox="0 0 24 24"><path d="M12 2.5l8.5 4.75v9.5L12 21.5l-8.5-4.75v-9.5z"/><path d="M3.5 7.25L12 12l8.5-4.75M12 12v9.5" /><path d="M3.5 16.75L12 12l8.5 4.75M12 2.5V12" stroke-dasharray="1.5 2" opacity=".6"/></symbol>
+  <symbol id="i-quality" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" fill-opacity=".35"/><path d="M8.5 8.5l1.2 1.2"/></symbol>
   <symbol id="i-zin" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4M11 8v6M8 11h6"/></symbol>
   <symbol id="i-zout" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4M8 11h6"/></symbol>
   <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8"/></symbol>
@@ -80,6 +81,7 @@ if(!/^(dark|light|industrial)$/.test(t||''))t='industrial';document.documentElem
   <div class="tgroup" data-grp="render">
     <button class="tbtn on" data-render="shaded" onclick="setRenderMode('shaded')" title="Schattierte Darstellung"><svg class="ico"><use href="#i-shaded"/></svg>Schattiert</button>
     <button class="tbtn" data-render="wireframe" onclick="setRenderMode('wireframe')" title="Drahtmodell"><svg class="ico"><use href="#i-wire"/></svg>Drahtmodell</button>
+    <button class="tbtn" id="quality-btn" onclick="RSGfx.cycle()" title="Grafikqualität: Standard (schnell), Hoch (Material, Licht, Schatten), Maximal (zusätzlich Ambient Occlusion und Kantenglättung)"><svg class="ico"><use href="#i-quality"/></svg><span id="quality-lbl">Grafik Hoch</span></button>
   </div>
   <div class="tgroup" data-grp="zoom">
     <button class="tbtn" onclick="zoomBy(0.8)"><svg class="ico"><use href="#i-zin"/></svg>Zoom +</button>
@@ -288,10 +290,19 @@ if(!/^(dark|light|industrial)$/.test(t||''))t='industrial';document.documentElem
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261026e"></script>
-<script src="./js/formats.js?v=20261026e"></script>
-<script src="./js/simulator.js?v=20261026e"></script>
-<script src="./js/placement.js?v=20261026e"></script>
-<script src="./js/host-api.js?v=20261026e"></script>
+<script src="./js/vendor/three-r128/RoomEnvironment.js"></script>
+<script src="./js/vendor/three-r128/EffectComposer.js"></script>
+<script src="./js/vendor/three-r128/ShaderPass.js"></script>
+<script src="./js/vendor/three-r128/CopyShader.js"></script>
+<script src="./js/vendor/three-r128/SimplexNoise.js"></script>
+<script src="./js/vendor/three-r128/SSAOShader.js"></script>
+<script src="./js/vendor/three-r128/SSAOPass.js"></script>
+<script src="./js/vendor/three-r128/FXAAShader.js"></script>
+<script src="./js/dp-solver.js?v=20261026f"></script>
+<script src="./js/formats.js?v=20261026f"></script>
+<script src="./js/simulator.js?v=20261026f"></script>
+<script src="./js/graphics.js?v=20261026f"></script>
+<script src="./js/placement.js?v=20261026f"></script>
+<script src="./js/host-api.js?v=20261026f"></script>
 </body>
 </html>

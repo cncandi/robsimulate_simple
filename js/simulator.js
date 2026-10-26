@@ -3,6 +3,12 @@
 // On-Demand-Rendering: nur rendern wenn nötig (spart GPU/CPU/Akku im Leerlauf)
 let _renderFrames = 4;
 function requestRender(n) { _renderFrames = Math.max(_renderFrames, n || 2); }
+// Zeichnen über js/graphics.js (Qualitätsstufen); ohne das Modul wie bisher
+function _renderScene() {
+  if (window.RSGfx) { window.RSGfx.render(); return; }
+  if (renderMode === 'wireframe') _applyRenderMode();
+  renderer.render(scene, activeCam);
+}
 // Zustandsmeldung an die Host-Software (js/host-api.js); gebündelt, max. einmal je Frame
 var _robsimStateQueued = false;
 function _robsimEmitState() {
@@ -540,6 +546,7 @@ function applyTheme(init){
   g.rotation.x=Math.PI/2; g.visible=grid.visible; scene.remove(grid); grid.geometry.dispose(); grid.material.dispose(); grid=g; scene.add(grid);
   const l=document.getElementById('theme-lbl'); if(l) l.textContent=THEME_LBL[t]||t;
   if(!init) aPlotInvalidate();
+  if(window.RSGfx) window.RSGfx.themeChanged();
   requestRender();
 }
 function setTheme(t){
@@ -742,8 +749,36 @@ function downloadFile(content, filename) {
 var tcpList  = [{ x:364.5, y:0, z:46.5, a:0, b:90, c:0, name:'TCP 1' }];
 var baseList = [{ x:0, y:0, z:0, a:0, b:0, c:0, name:'BASE 1' }];
 
+// Glatte Rundungen bei STL: Normalen je Ecke aus allen angrenzenden Dreiecken mitteln,
+// aber nur über Kanten unter dem Knickwinkel – scharfe Kanten bleiben scharf.
+function _smoothNormals(geo, creaseDeg) {
+  var pos = geo.attributes.position; if (!pos || geo.index) { geo.computeVertexNormals(); return geo; }
+  var p = pos.array, nV = pos.count, nT = Math.floor(nV / 3), cosC = Math.cos((creaseDeg || 30) * Math.PI / 180);
+  var fn = new Float32Array(nT * 3), fu = new Float32Array(nT * 3);   // Flächennormale (flächengewichtet / normiert)
+  for (var t = 0; t < nT; t++) {
+    var i = t * 9, ax = p[i+3]-p[i], ay = p[i+4]-p[i+1], az = p[i+5]-p[i+2], bx = p[i+6]-p[i], by = p[i+7]-p[i+1], bz = p[i+8]-p[i+2];
+    var nx = ay*bz-az*by, ny = az*bx-ax*bz, nz = ax*by-ay*bx, l = Math.hypot(nx, ny, nz) || 1;
+    fn[t*3] = nx; fn[t*3+1] = ny; fn[t*3+2] = nz; fu[t*3] = nx/l; fu[t*3+1] = ny/l; fu[t*3+2] = nz/l;
+  }
+  var map = new Map(), key = new Array(nV);
+  for (var v = 0; v < nV; v++) {
+    var k = Math.round(p[v*3]*500) + '_' + Math.round(p[v*3+1]*500) + '_' + Math.round(p[v*3+2]*500);
+    key[v] = k; var l2 = map.get(k); if (l2) l2.push(v / 3 | 0); else map.set(k, [v / 3 | 0]);
+  }
+  var out = new Float32Array(nV * 3);
+  for (v = 0; v < nV; v++) {
+    var t0 = v / 3 | 0, list = map.get(key[v]), sx = 0, sy = 0, sz = 0;
+    for (var j = 0; j < list.length; j++) {
+      var t1 = list[j];
+      if (fu[t0*3]*fu[t1*3] + fu[t0*3+1]*fu[t1*3+1] + fu[t0*3+2]*fu[t1*3+2] >= cosC) { sx += fn[t1*3]; sy += fn[t1*3+1]; sz += fn[t1*3+2]; }
+    }
+    var ln = Math.hypot(sx, sy, sz) || 1; out[v*3] = sx/ln; out[v*3+1] = sy/ln; out[v*3+2] = sz/ln;
+  }
+  geo.setAttribute('normal', new THREE.BufferAttribute(out, 3));
+  return geo;
+}
 function _stlMesh(buf, color, extra) {
-  var geo = stlLoader.parse(buf); geo.computeVertexNormals();
+  var geo = _smoothNormals(stlLoader.parse(buf), 32);
   return new THREE.Mesh(geo, new THREE.MeshPhongMaterial(Object.assign({color:color, shininess:80}, extra||{})));
 }
 function _removeMesh(m) { if (m) { scene.remove(m); m.geometry.dispose(); } }
@@ -1736,6 +1771,10 @@ function updateCamera(){
   const dir=new THREE.Vector3(Math.sin(phi)*Math.cos(theta),Math.sin(phi)*Math.sin(theta),Math.cos(phi));
   perspCam.position.copy(orbitTarget).addScaledVector(dir,radius);
   perspCam.lookAt(orbitTarget);
+  // Tiefenbereich an den Abstand anpassen (genauere Tiefe für Schatten und Ambient Occlusion)
+  const nr=Math.max(2,radius*0.02), fr=radius+30000;
+  if(perspCam.near!==nr||perspCam.far!==fr){ perspCam.near=nr; perspCam.far=fr; perspCam.updateProjectionMatrix(); }
+  orthoCam.near=radius-30000; orthoCam.far=radius+30000;
   orthoCam.position.copy(perspCam.position); orthoCam.lookAt(orbitTarget);
   const hh=radius*VIEW_K, hw=hh*(perspCam.aspect||1);
   orthoCam.left=-hw; orthoCam.right=hw; orthoCam.top=hh; orthoCam.bottom=-hh; orthoCam.updateProjectionMatrix();
@@ -1791,6 +1830,7 @@ function fitView(){
 function resize(){
   const vp=canvas.parentElement;const w=vp.clientWidth,h=vp.clientHeight;
   renderer.setSize(w,h);perspCam.aspect=w/h;perspCam.updateProjectionMatrix();
+  if(window.RSGfx) window.RSGfx.resize(w,h);
   updateCamera();
 }
 window.addEventListener('resize', function(){ resize(); _aPlotFitWidth(); });
@@ -2416,7 +2456,7 @@ function _simAdvance(N, dt, speed, velCP, displayMmMin) {
     newT = _simIntegrate(pos, sim.t, sd, dt);
     if ((sd > 0 && newT >= sim.stepTarget) || (sd < 0 && newT <= sim.stepTarget)) {
       newT = sim.stepTarget; sim.stepTarget = null;
-      applySimT(newT); setStatus('paused','PAUSED'); renderer.render(scene, activeCam);
+      applySimT(newT); setStatus('paused','PAUSED'); _renderScene();
       return false;
     }
   } else {
@@ -2456,7 +2496,7 @@ function frame(ts) {
     _simAdvance(N, dt, speed, velCP, displayMmMin);
     _renderFrames = Math.max(_renderFrames, 1); // während Sim rendern
   }
-  if (_renderFrames > 0) { if(renderMode==='wireframe') _applyRenderMode(); renderer.render(scene, activeCam); _renderFrames--; }
+  if (_renderFrames > 0) { _renderScene(); _renderFrames--; }
 }
 requestAnimationFrame(frame);
 

@@ -15,6 +15,8 @@ Reine Browser-Anwendung ohne Build-Schritt und ohne Server-Logik. Vier Dateien, 
 | `js/placement.js` | Teilposition optimieren (BASE X/Y/Drehung um Z) |
 | `js/dp-solver.js` | globaler IK-Pfadplaner für Programme bis 150 Punkte (9 KB) |
 | `js/host-api.js` | Host-Schnittstelle `RobSim` (Befehle, postMessage, WebView2, Einbettungsmodus) |
+| `js/graphics.js` | Grafikqualität: PBR-Material, Studio-Umgebung, Schatten, ACES-Tonemapping, SSAO, FXAA |
+| `js/vendor/three-r128/` | three.js-r128-Erweiterungen lokal (RoomEnvironment, EffectComposer, SSAOPass, FXAA u. a.) |
 
 Funktionen: Roboter aus der RobLib-Bibliothek, Simulation von KUKA KRL, ABB RAPID, FANUC TP und APT, BASE-Verwaltung, Robot Map
 (A-Winkel-Karte mit Achsgrenzen, Singularitäten, Kollision, grüner Weglinie, Verifikation),
@@ -183,6 +185,7 @@ Der rechte Bereich verschwindet automatisch, wenn `sim`, `base` und `tcp` aus si
 | `hide=a,b,…` | diese Bereiche aus |
 | `show=a,b,…` | diese Bereiche an (wird nach `embed` und `hide` angewendet) |
 | `theme=dark\|light\|industrial` | Theme (wie P3D-Slicer-Online: Dunkel, Hell, Industrie) |
+| `quality=standard\|high\|max` | Grafikqualität (siehe unten) |
 | `view=…`, `projection=…`, `render=…`, `path=…`, `aplot=1` | Startzustand |
 
 Beispiele:
@@ -213,6 +216,7 @@ Ungültige Werte lösen einen Fehler aus (`Error('unbekannte Ansicht: …')`).
 | `zoom` | `in` \| `out` \| Faktor (z. B. `0.8` = näher, `1.25` = weiter) | Zoom + / Zoom − |
 | `fit` | – | Alles in Bild (Einpassen) |
 | `theme` | `dark` \| `light` \| `industrial` \| `toggle` (auch `dunkel` `hell` `industrie`) | Darstellung wechseln (Kopfzeile) |
+| `quality` | `standard` \| `high` \| `max` \| `toggle` | Grafikqualität (Toolbar „Grafik“) |
 | `path` | `all` \| `upto` \| `none` | Anzeige G-Code / G-Code bis Position / Anzeige aus |
 | `aplot` | `on` \| `off` \| `toggle` | Anzeige A-Plot (Robot Map) |
 | `ui` | Bereich oder Liste (`"sim,base"`), Wert `on` \| `off` \| `toggle` | Bereiche ein-/ausblenden (Liste siehe „Bereiche einzeln ein-/ausblenden“) |
@@ -272,7 +276,7 @@ erhalten, bei neuen Einträgen 0. Nach jeder Änderung rechnet das Modul die IK 
 
 Zustand (`RobSim.getState()` und Ergebnis jedes Befehls):
 ```json
-{"api":1,"theme":"industrial","view":"iso","projection":"persp","render":"shaded","path":"all","aplot":false,
+{"api":1,"theme":"industrial","quality":"high","view":"iso","projection":"persp","render":"shaded","path":"all","aplot":false,
  "ui":{"header":false,"toolbar":false,"editor":false,"sim":false,"base":false,"tcp":true,"statusbar":true,"legend":true,"hint":true,
        "tb-view":true,"tb-proj":true,"tb-render":true,"tb-zoom":true,"tb-path":true,"tb-aplot":true,"panel":true,"aplot":false},
  "format":"kuka","points":120,"steps":130,"t":0,"step":0,"line":1,
@@ -383,7 +387,19 @@ RobSim("zoom", "in");  RobSim("path", "none");       RobSim("aplot", "on");
 | BASE / TCP-Eingabe | `setBase` / `setTool` |
 | Teilposition optimieren | `optimizeBase`, danach `applyOptimizedBase` |
 
-## 5. Unterstützter KRL-Umfang
+## 4b. Grafikqualität
+
+| Stufe | Inhalt | Einsatz |
+|---|---|---|
+| `standard` | bisherige Darstellung (Phong-Material, ohne Schatten) | schwache Rechner, sehr große Zellen |
+| `high` (Standard) | PBR-Material (`MeshPhysicalMaterial`, Lack mit Klarlack, graue Teile metallisch), Studio-Umgebung (`RoomEnvironment`, keine HDR-Datei nötig), weiche Schatten auf einem Schattenboden, ACES-Tonemapping, sRGB-Ausgabe | normaler Betrieb |
+| `max` | wie `high` + Ambient Occlusion (SSAO, Kontaktschatten in Ritzen) + FXAA | Präsentation, Screenshots |
+
+In allen Stufen werden STL-Normalen mit Knickwinkel 32° geglättet: Rundungen wirken glatt, scharfe Kanten bleiben scharf.
+Linien, Zielpunkte, Koordinatensysteme und Beschriftungen behalten in allen Stufen ihre exakten Farben.
+Kein Bloom: Er würde dünne Bahnlinien und Markierungen überstrahlen.
+
+
 
 Bewegungen: `PTP {…}` (kartesisch oder `A1…A6`), `LIN {…}`, `SLIN {…}`, `CIRC {Hilfspunkt},{Zielpunkt}`,
 `LIN_EXTRUDE({…}[,n])`, `CIRC_EXTRUDE({…},{…}[,n])` (Extrusionsparameter wird ignoriert).
@@ -425,6 +441,7 @@ Bibliotheksliste: `GET …/roblib/api.php?action=list` → `{ok, count, robots:[
 | `robsimSimple.ui` | ausgeblendete Bereiche |
 | `robsimSimple.fmt` | gewähltes Programmformat |
 | `robsimSimple.theme` | gewähltes Theme (Standard `industrial`) |
+| `robsimSimple.quality` | Grafikqualität (Standard `high`) |
 
 Kein Server-Speicher, keine Cookies, keine Anmeldung.
 
