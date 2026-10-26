@@ -3,6 +3,13 @@
 // On-Demand-Rendering: nur rendern wenn nötig (spart GPU/CPU/Akku im Leerlauf)
 let _renderFrames = 4;
 function requestRender(n) { _renderFrames = Math.max(_renderFrames, n || 2); }
+// Zustandsmeldung an die Host-Software (js/host-api.js); gebündelt, max. einmal je Frame
+var _robsimStateQueued = false;
+function _robsimEmitState() {
+  if (_robsimStateQueued || typeof window.RobSim === 'undefined') return;
+  _robsimStateQueued = true;
+  requestAnimationFrame(function () { _robsimStateQueued = false; if (window.RobSim && window.RobSim._emitState) window.RobSim._emitState(); });
+}
 // console.log nur mit ?debug in der URL (Produktiv still; warn/error bleiben)
 if (!/[?&]debug\b/.test(location.search)) { const _noop = function(){}; console.log = _noop; console.debug = _noop; }
 
@@ -507,7 +514,10 @@ scene.background=new THREE.Color(0x1b1b1d);
 
 const perspCam=new THREE.PerspectiveCamera(50,1,1,80000);
 perspCam.up.set(0,0,1);
-const activeCam=perspCam;
+// Orthografische Kamera: Bildhöhe aus Orbit-Abstand, damit beim Umschalten die Größe gleich bleibt
+const orthoCam=new THREE.OrthographicCamera(-1,1,1,-1,-200000,200000);
+orthoCam.up.set(0,0,1);
+let activeCam=perspCam, projMode='persp', renderMode='shaded';
 
 // Lights
 scene.add(new THREE.AmbientLight(0xffffff, 0.85));
@@ -1704,10 +1714,35 @@ function updateCamera(){
   const dir=new THREE.Vector3(Math.sin(phi)*Math.cos(theta),Math.sin(phi)*Math.sin(theta),Math.cos(phi));
   perspCam.position.copy(orbitTarget).addScaledVector(dir,radius);
   perspCam.lookAt(orbitTarget);
+  orthoCam.position.copy(perspCam.position); orthoCam.lookAt(orbitTarget);
+  const hh=radius*VIEW_K, hw=hh*(perspCam.aspect||1);
+  orthoCam.left=-hw; orthoCam.right=hw; orthoCam.top=hh; orthoCam.bottom=-hh; orthoCam.updateProjectionMatrix();
   requestRender();
+  _robsimEmitState();
+}
+// Projektion: 'persp' (Perspektive) oder 'ortho' (Orthografisch)
+function setProjection(mode){
+  if(mode!=='persp'&&mode!=='ortho')return;
+  projMode=mode; activeCam=mode==='ortho'?orthoCam:perspCam;
+  document.querySelectorAll('[data-proj]').forEach(b=>b.classList.toggle('on',b.dataset.proj===mode));
+  updateCamera();
+}
+// Darstellung: 'shaded' (Schattiert) oder 'wireframe' (Drahtmodell); gilt auch für später geladene Modelle
+function _applyRenderMode(){
+  const wf=renderMode==='wireframe';
+  scene.traverse(o=>{ if(!o.isMesh||!o.material)return;
+    (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{ if(m.wireframe!==wf&&'wireframe' in m){ m.wireframe=wf; m.needsUpdate=true; } }); });
+}
+function setRenderMode(mode){
+  if(mode!=='shaded'&&mode!=='wireframe')return;
+  renderMode=mode;
+  document.querySelectorAll('[data-render]').forEach(b=>b.classList.toggle('on',b.dataset.render===mode));
+  _applyRenderMode(); requestRender(); _robsimEmitState();
 }
 
+let curView='iso';
 function _markView(name){
+  curView=name||null;
   document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('on',b.dataset.view===name));
 }
 function setView(name){
@@ -1739,13 +1774,13 @@ function resize(){
 window.addEventListener('resize', function(){ resize(); _aPlotFitWidth(); });
 
 // ═══════════════════════════════════════════════════
-// MAUS: Orbit (links/rechts), Pan (Mitte), Zoom (Rad)
+// MAUS: Drehen (rechts), Verschieben (Mitte), Zoom (Rad); links bleibt frei für die Host-Software
 // ═══════════════════════════════════════════════════
 let drag=null;
 canvas.addEventListener('mousedown',e=>{
-  if(e.button>2)return;
+  if(e.button!==1&&e.button!==2)return;
   e.preventDefault();
-  drag={pan:e.button!==0,lx:e.clientX,ly:e.clientY};
+  drag={pan:e.button===1,lx:e.clientX,ly:e.clientY};
   canvas.classList.add('dragging');
 });
 window.addEventListener('mousemove',e=>{
@@ -2202,7 +2237,7 @@ let plannedLine=null, pathMode='all';
 function setPathMode(mode){
   pathMode=mode;
   document.querySelectorAll('[data-path]').forEach(b=>b.classList.toggle('on',b.dataset.path===mode));
-  updateVisitedPath(sim.t); requestRender();
+  updateVisitedPath(sim.t); requestRender(); _robsimEmitState();
 }
 function _applyPathMode(t){
   const show=pathMode!=='none';
@@ -2399,7 +2434,7 @@ function frame(ts) {
     _simAdvance(N, dt, speed, velCP, displayMmMin);
     _renderFrames = Math.max(_renderFrames, 1); // während Sim rendern
   }
-  if (_renderFrames > 0) { renderer.render(scene, activeCam); _renderFrames--; }
+  if (_renderFrames > 0) { if(renderMode==='wireframe') _applyRenderMode(); renderer.render(scene, activeCam); _renderFrames--; }
 }
 requestAnimationFrame(frame);
 
@@ -2847,12 +2882,18 @@ function _aLayoutCanvas() {
   _aG.W = w; _aG.H = h; _aG.dpr = dpr;
   _aG.CW = w - _aG.ML - _aG.MR; _aG.CH = h - _aG.MT - _aG.MB;
 }
+function setAPlot(on) {
+  var p = document.getElementById('aplot-panel'); if (!p) return;
+  if ((getComputedStyle(p).display !== 'none') !== !!on) toggleAPlot();
+}
 function toggleAPlot() {
   var p = document.getElementById('aplot-panel'); if (!p) return;
   var show = getComputedStyle(p).display === 'none';
   p.style.display = show ? 'flex' : 'none';
   document.getElementById('rib-aplot').classList.toggle('on', show);
   if (show) { _aPlotFitWidth(); aPlotInvalidate(); }
+  if (typeof resize === 'function') resize();
+  _robsimEmitState();
 }
 function aPlotToggleMax() {
   var p = document.getElementById('aplot-panel');

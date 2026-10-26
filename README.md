@@ -14,7 +14,7 @@ Live: https://cnc-technik.de/robsimul/simple/
   "Übernehmen" schreibt A für alle Punkte ins KRL.
 - Ellbogen-Singularität: Streckwinkel aus den Achsmaßen berechnet (KR8 ca. 18°), nicht pauschal A3 = ±90°.
 - 3D-Ansicht: Standardansichten Vorne/Hinten/Links/Rechts/Oben/Unten/Isometrisch, 
-  Zoom +/−, Einpassen; Maus: Drehen (links), Verschieben (rechts/Mitte), Zoom (Rad)
+  Perspektive/Orthografisch, Schattiert/Drahtmodell, Zoom +/−, Einpassen; Steuerung aus Host-Software über `RobSim` (siehe INTEGRATION.md 4a); Maus: Drehen (rechte Taste), Verschieben (mittlere Taste), Zoom (Rad); linke Taste ohne Kamerafunktion
 - Oberfläche im Stil von P3D-SO (Farben, Toolbar mit Icon über Label, Panels, Statusleiste)
 
 ## Dateien

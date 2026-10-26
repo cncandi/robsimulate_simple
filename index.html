@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261022l">
+<link rel="stylesheet" href="./css/simulator.css?v=20261026a">
 </head>
 <body>
 
@@ -22,6 +22,10 @@
   <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
   <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 2.5l8.5 4.75v9.5L12 21.5l-8.5-4.75v-9.5z"/><path d="M3.5 7.25L12 12l8.5-4.75M12 12v9.5"/></symbol>
+  <symbol id="i-persp" viewBox="0 0 24 24"><path d="M7 7h10l4 13H3z"/><path d="M12 7v13M5 13.5h14"/></symbol>
+  <symbol id="i-ortho" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15"/><path d="M12 5v15M4 12.5h16"/></symbol>
+  <symbol id="i-shaded" viewBox="0 0 24 24"><path d="M12 2.5l8.5 4.75v9.5L12 21.5l-8.5-4.75v-9.5z" fill="currentColor" fill-opacity=".35"/><path d="M3.5 7.25L12 12l8.5-4.75M12 12v9.5"/></symbol>
+  <symbol id="i-wire" viewBox="0 0 24 24"><path d="M12 2.5l8.5 4.75v9.5L12 21.5l-8.5-4.75v-9.5z"/><path d="M3.5 7.25L12 12l8.5-4.75M12 12v9.5" /><path d="M3.5 16.75L12 12l8.5 4.75M12 2.5V12" stroke-dasharray="1.5 2" opacity=".6"/></symbol>
   <symbol id="i-zin" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4M11 8v6M8 11h6"/></symbol>
   <symbol id="i-zout" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4M8 11h6"/></symbol>
   <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8"/></symbol>
@@ -64,6 +68,14 @@
     <button class="tbtn" data-view="iso"    onclick="setView('iso')"><svg class="ico"><use href="#i-cube"/></svg>Isometrisch</button>
   </div>
   <div class="tgroup">
+    <button class="tbtn on" data-proj="persp" onclick="setProjection('persp')" title="Perspektivische Ansicht"><svg class="ico"><use href="#i-persp"/></svg>Perspektive</button>
+    <button class="tbtn" data-proj="ortho" onclick="setProjection('ortho')" title="Orthografische Ansicht (ohne Fluchtpunkt)"><svg class="ico"><use href="#i-ortho"/></svg>Orthografisch</button>
+  </div>
+  <div class="tgroup">
+    <button class="tbtn on" data-render="shaded" onclick="setRenderMode('shaded')" title="Schattierte Darstellung"><svg class="ico"><use href="#i-shaded"/></svg>Schattiert</button>
+    <button class="tbtn" data-render="wireframe" onclick="setRenderMode('wireframe')" title="Drahtmodell"><svg class="ico"><use href="#i-wire"/></svg>Drahtmodell</button>
+  </div>
+  <div class="tgroup">
     <button class="tbtn" onclick="zoomBy(0.8)"><svg class="ico"><use href="#i-zin"/></svg>Zoom +</button>
     <button class="tbtn" onclick="zoomBy(1.25)"><svg class="ico"><use href="#i-zout"/></svg>Zoom −</button>
     <button class="tbtn" onclick="fitView()"><svg class="ico"><use href="#i-fit"/></svg>Einpassen</button>
@@ -100,7 +112,7 @@
       <div class="lrow"><div class="lbar" style="background:#44ff44"></div>Y</div>
       <div class="lrow"><div class="lbar" style="background:#4488ff"></div>Z</div>
     </div>
-    <div class="scene-hint">Links ziehen = Drehen · Rechts/Mitte ziehen = Verschieben · Mausrad = Zoom</div>
+    <div class="scene-hint">Rechts ziehen = Drehen · Mitte ziehen = Verschieben · Mausrad = Zoom</div>
   </div>
 
   <!-- Simulation -->
@@ -270,9 +282,10 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="./js/dp-solver.js?v=20261022l"></script>
-<script src="./js/formats.js?v=20261022l"></script>
-<script src="./js/simulator.js?v=20261022l"></script>
-<script src="./js/placement.js?v=20261022l"></script>
+<script src="./js/dp-solver.js?v=20261026a"></script>
+<script src="./js/formats.js?v=20261026a"></script>
+<script src="./js/simulator.js?v=20261026a"></script>
+<script src="./js/placement.js?v=20261026a"></script>
+<script src="./js/host-api.js?v=20261026a"></script>
 </body>
 </html>

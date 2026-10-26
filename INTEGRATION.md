@@ -1,6 +1,6 @@
 # RobSimul Simple – Integration in andere Software
 
-Stand: 22.10.2026 · Repository `cncandi/robsimulate_simple` · Live: https://cnc-technik.de/robsimul/simple/
+Stand: 26.10.2026 · Repository `cncandi/robsimulate_simple` · Live: https://cnc-technik.de/robsimul/simple/
 
 ## 1. Was die Software ist
 
@@ -14,6 +14,7 @@ Reine Browser-Anwendung ohne Build-Schritt und ohne Server-Logik. Vier Dateien, 
 | `js/formats.js` | Parser/Generatoren ABB RAPID, FANUC TP, APT CL-Data |
 | `js/placement.js` | Teilposition optimieren (BASE X/Y/Drehung um Z) |
 | `js/dp-solver.js` | globaler IK-Pfadplaner für Programme bis 150 Punkte (9 KB) |
+| `js/host-api.js` | Host-Schnittstelle `RobSim` (Befehle, postMessage, WebView2, Einbettungsmodus) |
 
 Funktionen: Roboter aus der RobLib-Bibliothek, Simulation von KUKA KRL, ABB RAPID, FANUC TP und APT, BASE-Verwaltung, Robot Map
 (A-Winkel-Karte mit Achsgrenzen, Singularitäten, Kollision, grüner Weglinie, Verifikation),
@@ -38,9 +39,8 @@ Browser: aktueller Chrome/Edge/Firefox/Safari mit WebGL. Für den Betrieb genüg
 ```html
 <iframe src="https://cnc-technik.de/robsimul/simple/" style="width:100%;height:800px;border:0"></iframe>
 ```
-Nachteil: andere Domain → die Host-Software kann **nicht** auf Funktionen im iframe zugreifen
-(Browser-Sicherheit). Für Datenaustausch (Programm hineingeben, Ergebnis zurückholen) wird eine
-`postMessage`-Schnittstelle benötigt – **noch nicht eingebaut** (siehe Abschnitt 8).
+Andere Domain → kein direkter Funktionszugriff (Browser-Sicherheit). Steuerung über die
+`postMessage`-Schnittstelle (Abschnitt 4a).
 
 ### B. Kopie auf derselben Domain im iframe (empfohlen für Web-Software)
 Die vier Dateien (plus three.js/JSZip lokal) in die eigene Anwendung kopieren, z. B. unter `/robsim/`,
@@ -65,8 +65,8 @@ await webView.ExecuteScriptAsync(
 // Ergebnis lesen (z. B. geänderter Code nach 'Übernehmen' in der Map):
 string json = await webView.ExecuteScriptAsync("document.getElementById('code-input').value");
 ```
-Rückmeldungen aus dem Simulator an die Host-Software: `window.chrome.webview.postMessage(...)` – dafür
-ist eine kleine Ergänzung im Simulator nötig (Abschnitt 8).
+Befehle und Rückmeldungen laufen über `RobSim.cmd(...)` bzw. `PostWebMessageAsJson` /
+`WebMessageReceived` (Abschnitt 4a).
 
 ### D. Direkt in die Seite der Host-Software einbauen (nicht empfohlen)
 Der Code arbeitet mit globalen Funktionen/Variablen (mehrere hundert Namen), festen Element-IDs,
@@ -138,6 +138,8 @@ Im Programm definierte Werkzeuge (`parsedData.tools`) haben Vorrang vor `tcpList
 | `toggleRealtime()` | Echtzeit ($VEL.CP) ein/aus |
 | `setPathMode('all'|'upto'|'none')` | G-Code-Anzeige |
 | `setView('vorne'|'hinten'|'links'|'rechts'|'oben'|'unten'|'iso')`, `zoomBy(f)`, `fitView()` | Ansicht |
+| `setProjection('persp'|'ortho')`, `setRenderMode('shaded'|'wireframe')` | Projektion, Darstellung |
+| `setAPlot(true|false)` | A-Plot ein/aus |
 | `toggleRightPanel()`, `toggleLeftPanel()` | Seitenbereiche ein/aus |
 
 ### Robot Map
@@ -149,6 +151,149 @@ Im Programm definierte Werkzeuge (`parsedData.tools`) haben Vorrang vor `tcpList
 | `_aPath` | Linie als Knoten `[{d: Bahnlänge mm, a: A-Wert}]` |
 | `_aVerify` | Verifikation `{bad: Satzindizes, kind: 1=unerreichbar 2=Achsgrenze 3=Singularität 4=Achssprung 5=Kollision}` |
 | `aPlotApply()` | A-Werte der Linie ins Programm schreiben (ändert `code-input`, parst neu) |
+
+## 4a. Host-Steuerung `RobSim` (Ansicht, Darstellung, Anzeige)
+
+Ziel: Die Host-Software hat **eigene** Schaltflächen (oder Menü/Tastenkürzel) und schickt Befehle an das Modul.
+Die Toolbar des Moduls wird dazu ausgeblendet, damit keine Bedienelemente doppelt vorhanden sind.
+
+### Einbettungsmodus (URL-Parameter)
+| Parameter | Wirkung |
+|---|---|
+| `embed=1` | Kopfzeile und Toolbar ausblenden |
+| `hide=header,toolbar,editor,panel` | einzelne Bereiche ausblenden (`editor` = Programm links, `panel` = Simulation/BASE/TCP rechts) |
+| `view=…`, `projection=…`, `render=…`, `path=…`, `aplot=1` | Startzustand (Werte wie bei den Befehlen) |
+
+Beispiel: `index.html?embed=1&hide=editor,panel&view=iso&projection=ortho`
+
+### Mausbelegung im 3D-Fenster (fest)
+| Taste | Funktion |
+|---|---|
+| rechte Taste ziehen | Drehen |
+| mittlere Taste ziehen | Verschieben |
+| Mausrad | Zoom |
+| linke Taste | keine Kamerafunktion (frei für die Host-Software) |
+
+### Befehle
+Aufruf: `RobSim.cmd(befehl, wert[, wert2])`. Rückgabe: aktueller Zustand (siehe unten), bei `loadProgram` ein Promise.
+Ungültige Werte lösen einen Fehler aus (`Error('unbekannte Ansicht: …')`).
+
+| Befehl | Werte | Toolbar-Entsprechung |
+|---|---|---|
+| `view` | `oben` `unten` `links` `rechts` `vorne` `hinten` `iso` (auch `top` `bottom` `left` `right` `front` `back`) | Ansicht oben/unten/links/rechts/vorne/hinten/isometrisch |
+| `projection` | `persp` \| `ortho` \| `toggle` | Perspektive / Orthografisch |
+| `render` | `shaded` \| `wireframe` \| `toggle` | Schattiert / Drahtmodell |
+| `zoom` | `in` \| `out` \| Faktor (z. B. `0.8` = näher, `1.25` = weiter) | Zoom + / Zoom − |
+| `fit` | – | Alles in Bild (Einpassen) |
+| `path` | `all` \| `upto` \| `none` | Anzeige G-Code / G-Code bis Position / Anzeige aus |
+| `aplot` | `on` \| `off` \| `toggle` | Anzeige A-Plot (Robot Map) |
+| `ui` | Bereich `header` `toolbar` `editor` `panel`, Wert `on` \| `off` \| `toggle` | Bereiche ein-/ausblenden |
+| `loadProgram` | Text, Dateiname (optional, bestimmt das Format) – oder Objekt `{datei: text}` für Hauptprogramm + Module | Öffnen + Parse; Promise erfüllt sich, wenn die IK fertig ist |
+| `getProgram` | – | liefert den Programmtext (z. B. nach „Übernehmen“ in der Map) |
+| `play` | `fwd` \| `back` | Play vor/zurück |
+| `pause` | – | anhalten |
+| `seek` | Satzposition `t` (0 … N−1) | Positionsregler |
+| `getState` | – | Zustand abfragen |
+
+Zustand (`RobSim.getState()` und Ergebnis jedes Befehls):
+```json
+{"api":1,"view":"iso","projection":"persp","render":"shaded","path":"all","aplot":false,
+ "ui":{"header":false,"toolbar":false,"editor":true,"panel":true},
+ "format":"kuka","points":120,"t":0,"playing":false,"ikPending":false}
+```
+`view` ist `null`, sobald der Nutzer die Ansicht mit der Maus gedreht hat. Damit kann die Host-Software ihre
+Schaltflächen (aktiv/inaktiv) synchron halten.
+
+### Ereignisse
+| Ereignis | Wann | Daten |
+|---|---|---|
+| `ready` | Modul geladen, Befehle möglich | Zustand |
+| `state` | Zustand geändert (auch durch Maus oder Modul-Toolbar) | Zustand |
+| `parsed` | `loadProgram` fertig (IK berechnet) | Zustand |
+
+Gleiche Domain: `RobSim.on('state', st => …)`. Fremde Domain / WebView2: als Nachricht (siehe unten).
+
+### Variante 1: gleiche Domain (iframe) oder WebView2 per `ExecuteScriptAsync`
+```js
+const sim = document.getElementById('robsim').contentWindow;
+sim.RobSim.cmd('view', 'oben');
+sim.RobSim.cmd('projection', 'ortho');
+sim.RobSim.on('state', st => updateMyButtons(st));
+await sim.RobSim.cmd('loadProgram', krlText, 'teil.src');
+```
+```csharp
+await webView.ExecuteScriptAsync("RobSim.cmd('render','wireframe')");
+```
+
+### Variante 2: Nachrichten (iframe fremde Domain, WebView2, CefSharp)
+Anfrage an das Modul:
+```json
+{"robsim": 1, "id": "42", "cmd": "view", "args": ["oben"]}
+```
+Antwort des Moduls (gleiche `id`):
+```json
+{"robsim": 1, "id": "42", "ok": true, "result": { …Zustand… }}
+{"robsim": 1, "id": "43", "ok": false, "error": "unbekannte Ansicht: xyz"}
+```
+Ereignis vom Modul (ohne `id`):
+```json
+{"robsim": 1, "event": "state", "data": { …Zustand… }}
+```
+Nachrichten werden nur vom einbettenden Fenster (`window.parent`) bzw. von WebView2 angenommen.
+Statt `args` ist auch `"value": "oben"` erlaubt. Strings mit JSON werden ebenfalls angenommen.
+
+Web-Host (iframe):
+```js
+const frame = document.getElementById('robsim');
+let n = 0; const pending = {};
+function robsim(cmd, ...args) {
+  return new Promise((ok, fail) => {
+    const id = String(++n); pending[id] = r => r.ok ? ok(r.result) : fail(new Error(r.error));
+    frame.contentWindow.postMessage({ robsim: 1, id, cmd, args }, '*');
+  });
+}
+window.addEventListener('message', e => {
+  if (e.source !== frame.contentWindow || !e.data || !e.data.robsim) return;
+  const m = e.data;
+  if (m.id && pending[m.id]) { pending[m.id](m); delete pending[m.id]; }
+  else if (m.event === 'ready' || m.event === 'state') updateMyButtons(m.data);
+});
+// Host-Schaltflächen:
+btnTop.onclick   = () => robsim('view', 'oben');
+btnOrtho.onclick = () => robsim('projection', 'ortho');
+btnWire.onclick  = () => robsim('render', 'wireframe');
+btnFit.onclick   = () => robsim('fit');
+btnPathUpto.onclick = () => robsim('path', 'upto');
+btnAPlot.onclick = () => robsim('aplot', 'toggle');
+```
+Vor dem ersten Befehl auf das Ereignis `ready` warten.
+
+WebView2 (C#):
+```csharp
+webView.Source = new Uri("https://robsim.local/index.html?embed=1");
+webView.CoreWebView2.WebMessageReceived += (s, e) => {
+    var msg = JsonDocument.Parse(e.WebMessageAsJson).RootElement;
+    if (msg.TryGetProperty("event", out var ev) && ev.GetString() == "state")
+        UpdateButtons(msg.GetProperty("data"));          // view, projection, render, path, aplot …
+};
+void RobSim(string cmd, params object[] args) =>
+    webView.CoreWebView2.PostWebMessageAsJson(
+        JsonSerializer.Serialize(new { robsim = 1, id = Guid.NewGuid().ToString(), cmd, args }));
+// Host-Schaltflächen:
+RobSim("view", "iso"); RobSim("projection", "persp"); RobSim("render", "shaded");
+RobSim("zoom", "in");  RobSim("path", "none");       RobSim("aplot", "on");
+```
+
+### Zuordnung Host-Schaltfläche → Befehl
+| Host-Schaltfläche | Befehl |
+|---|---|
+| Ansicht oben / unten / links / rechts / vorne / hinten / iso | `view` `oben` / `unten` / `links` / `rechts` / `vorne` / `hinten` / `iso` |
+| Perspektive / Orthografisch | `projection` `persp` / `ortho` |
+| Schattiert / Drahtmodell | `render` `shaded` / `wireframe` |
+| Zoom + / Zoom − | `zoom` `in` / `out` |
+| Alles in Bild | `fit` |
+| Anzeige A-Plot | `aplot` `toggle` (oder `on`/`off`) |
+| Anzeige G-Code / G-Code bis / Anzeige aus | `path` `all` / `upto` / `none` |
 
 ## 5. Unterstützter KRL-Umfang
 
@@ -196,10 +341,8 @@ Kein Server-Speicher, keine Cookies, keine Anmeldung.
 
 ## 8. Noch nicht vorhanden – bei Bedarf ergänzen
 
-- **Nachrichten-Schnittstelle** (`postMessage` für iframe auf fremder Domain, `chrome.webview.postMessage`
-  für WebView2): Befehle `loadProgram`, `loadRobot`, `setBase`, `play/pause/seek`, `getProgram` und
-  Ereignisse `parsed`, `applied` (Map übernommen), `verify`.
-- **Einbettungsmodus**: Kopfzeile/Toolbar per URL-Parameter ausblenden, z. B. `?embed=1`.
+- Nachrichten-Befehle `loadRobot`, `setBase` und Ereignisse `applied` (Map übernommen), `verify`
+  (Ansicht/Darstellung/Anzeige, `loadProgram`, `getProgram`, `play/pause/seek` sind vorhanden, Abschnitt 4a).
 - **Offline-Paket**: three.js und JSZip lokal statt CDN.
 
 ## 9. Grenzen

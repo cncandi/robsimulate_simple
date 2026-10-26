@@ -236,3 +236,7 @@ input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;bac
 .plc-tab{width:100%;border-collapse:collapse;margin:4px 0 6px}
 .plc-tab td,.plc-tab th{padding:2px 4px;text-align:right}
 .plc-tab td:first-child{text-align:left}
+
+/* ── Einbettung (Host-Software): Bereiche ausblenden ──────── */
+body.rs-hide-header>header{display:none}
+body.rs-hide-toolbar>nav.toolbar{display:none}
