@@ -121,6 +121,7 @@
       playing: sim.playing, dir: sim.dir, speed: +document.getElementById('spd-s').value, realtime: !!_realtimeMode,
       status: (document.getElementById('sim-status') || {}).textContent || '',
       dirty: _progDirty(), ikPending: !!_ikPending,
+      robot: typeof _currentRobotName !== 'undefined' ? _currentRobotName : '',
       base: { active: baseNavIdx + 1, count: baseList.length }, tcp: { active: tcpNavIdx + 1, count: tcpList.length }
     };
   }
@@ -232,6 +233,25 @@
     deleteTool: function (n) {
       if (tcpList.length <= 1) throw new Error('mindestens ein TCP erforderlich');
       tcpNavTo(idx(n, tcpList.length)); tcpDelCurrent(); return { active: tcpNavIdx + 1, list: copyList(tcpList) };
+    },
+    // Roboter (RobLib)
+    robotLibrary: function (v) {            // Auswahldialog der Roboterbibliothek öffnen (v = 'close' schließt ihn)
+      if (lc(v) === 'close') closeLibPickerModal(); else openLibPickerModal();
+    },
+    loadRobot: function (r) {               // {name, zip_url} aus RobLib oder 'default' (Standardmodell)
+      if (r == null || lc(r) === 'default' || (typeof r === 'object' && lc(r.name) === 'default' && !r.zip_url)) { resetDefaultRobot(); return waitIK(); }
+      if (typeof r !== 'object' || !r.zip_url) throw new Error('{name, zip_url} oder "default" erwartet');
+      var u = new URL(String(r.zip_url), location.href);
+      if (u.protocol !== 'https:') throw new Error('Roboter-URL muss HTTPS verwenden');
+      return loadLibRobot({ name: String(r.name || ''), zip_url: u.href }).then(function () {
+        if (document.getElementById('simple-robot-name').textContent === 'Fehler beim Laden') throw new Error('Roboter konnte nicht geladen werden');
+        return waitIK();
+      });
+    },
+    getRobot: function () {                 // {name, zip_url} des aktuellen Roboters (zip_url null beim Standardmodell)
+      var s = null; try { s = JSON.parse(localStorage.getItem('robsimSimple.robot') || 'null'); } catch (e) {}
+      var n = typeof _currentRobotName !== 'undefined' ? _currentRobotName : '';
+      return { name: n, zip_url: s && s.name === n && s.zip_url ? s.zip_url : null };
     },
     getState: function () { return getState(); }
   };

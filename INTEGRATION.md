@@ -274,6 +274,16 @@ erhalten, bei neuen Einträgen 0. Nach jeder Änderung rechnet das Modul die IK 
 | `selectTool` | n | TCP n in der Eingabe anzeigen |
 | `deleteTool` | n | TCP n löschen (mindestens einer bleibt) |
 
+#### Roboter (RobLib)
+| Befehl | Werte | Wirkung |
+|---|---|---|
+| `robotLibrary` | – \| `close` | Auswahldialog der Roboterbibliothek im Modul öffnen / schließen (Auswahl wird im Browser gespeichert) |
+| `loadRobot` | `{name, zip_url}` \| `default` | Roboter aus RobLib laden (nur HTTPS) bzw. Standardmodell; Promise nach IK |
+| `getRobot` | – | `{name, zip_url}` des aktuellen Roboters (`zip_url` = `null` beim Standardmodell) |
+
+Der Zustand enthält `robot` (Name des aktuellen Roboters). Die Host-Software kann damit z. B. je Maschine
+`getRobot` speichern und später mit `loadRobot` wiederherstellen.
+
 Zustand (`RobSim.getState()` und Ergebnis jedes Befehls):
 ```json
 {"api":1,"theme":"industrial","quality":"high","view":"iso","projection":"persp","render":"shaded","path":"all","aplot":false,
@@ -281,7 +291,7 @@ Zustand (`RobSim.getState()` und Ergebnis jedes Befehls):
        "tb-view":true,"tb-proj":true,"tb-render":true,"tb-zoom":true,"tb-path":true,"tb-aplot":true,"panel":true,"aplot":false},
  "format":"kuka","points":120,"steps":130,"t":0,"step":0,"line":1,
  "playing":false,"dir":1,"speed":40,"realtime":false,"status":"STOPPED","dirty":false,"ikPending":false,
- "base":{"active":1,"count":1},"tcp":{"active":1,"count":1}}
+ "robot":"Standardmodell","base":{"active":1,"count":1},"tcp":{"active":1,"count":1}}
 ```
 `view` ist `null`, sobald der Nutzer die Ansicht mit der Maus gedreht hat. Damit kann die Host-Software ihre
 Schaltflächen (aktiv/inaktiv) synchron halten.
@@ -447,8 +457,8 @@ Kein Server-Speicher, keine Cookies, keine Anmeldung.
 
 ## 8. Noch nicht vorhanden – bei Bedarf ergänzen
 
-- Befehle `loadRobot`, Robot-Map-Befehle (Scan, Auto-Weg, Übernehmen) und Ereignis `verify`
-  (Ansicht, Editor, Simulation, BASE, TCP sind vorhanden, Abschnitt 4a).
+- Robot-Map-Befehle (Scan, Auto-Weg, Übernehmen) und Ereignis `verify`
+  (Ansicht, Editor, Simulation, BASE, TCP, Roboter sind vorhanden, Abschnitt 4a).
 - **Offline-Paket**: three.js und JSZip lokal statt CDN.
 
 ## 9. Grenzen
