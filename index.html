@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/simulator.css?v=20261026c">
+<link rel="stylesheet" href="./css/simulator.css?v=20261026d">
 </head>
 <body>
 
@@ -58,7 +58,7 @@
 </header>
 
 <nav class="toolbar">
-  <div class="tgroup">
+  <div class="tgroup" data-grp="view">
     <button class="tbtn" data-view="vorne"  onclick="setView('vorne')"><svg class="ico"><use href="#i-front"/></svg>Vorne</button>
     <button class="tbtn" data-view="hinten" onclick="setView('hinten')"><svg class="ico"><use href="#i-back"/></svg>Hinten</button>
     <button class="tbtn" data-view="links"  onclick="setView('links')"><svg class="ico"><use href="#i-left"/></svg>Links</button>
@@ -67,25 +67,25 @@
     <button class="tbtn" data-view="unten"  onclick="setView('unten')"><svg class="ico"><use href="#i-down"/></svg>Unten</button>
     <button class="tbtn" data-view="iso"    onclick="setView('iso')"><svg class="ico"><use href="#i-cube"/></svg>Isometrisch</button>
   </div>
-  <div class="tgroup">
+  <div class="tgroup" data-grp="proj">
     <button class="tbtn on" data-proj="persp" onclick="setProjection('persp')" title="Perspektivische Ansicht"><svg class="ico"><use href="#i-persp"/></svg>Perspektive</button>
     <button class="tbtn" data-proj="ortho" onclick="setProjection('ortho')" title="Orthografische Ansicht (ohne Fluchtpunkt)"><svg class="ico"><use href="#i-ortho"/></svg>Orthografisch</button>
   </div>
-  <div class="tgroup">
+  <div class="tgroup" data-grp="render">
     <button class="tbtn on" data-render="shaded" onclick="setRenderMode('shaded')" title="Schattierte Darstellung"><svg class="ico"><use href="#i-shaded"/></svg>Schattiert</button>
     <button class="tbtn" data-render="wireframe" onclick="setRenderMode('wireframe')" title="Drahtmodell"><svg class="ico"><use href="#i-wire"/></svg>Drahtmodell</button>
   </div>
-  <div class="tgroup">
+  <div class="tgroup" data-grp="zoom">
     <button class="tbtn" onclick="zoomBy(0.8)"><svg class="ico"><use href="#i-zin"/></svg>Zoom +</button>
     <button class="tbtn" onclick="zoomBy(1.25)"><svg class="ico"><use href="#i-zout"/></svg>Zoom −</button>
     <button class="tbtn" onclick="fitView()"><svg class="ico"><use href="#i-fit"/></svg>Einpassen</button>
   </div>
-  <div class="tgroup">
+  <div class="tgroup" data-grp="path">
     <button class="tbtn on" data-path="all"  onclick="setPathMode('all')"  title="G-Code-Bahn vollständig anzeigen"><svg class="ico"><use href="#i-path"/></svg>G-Code</button>
     <button class="tbtn" data-path="upto" onclick="setPathMode('upto')" title="G-Code-Bahn nur bis zum aktuellen Simulationspunkt anzeigen"><svg class="ico"><use href="#i-pathupto"/></svg>Bis Position</button>
     <button class="tbtn" data-path="none" onclick="setPathMode('none')" title="G-Code-Bahn ausblenden"><svg class="ico"><use href="#i-pathoff"/></svg>Aus</button>
   </div>
-  <div class="tgroup">
+  <div class="tgroup" data-grp="aplot">
     <button class="tbtn" id="rib-aplot" onclick="toggleAPlot()" title="A-Winkel-Verlauf ein/ausblenden"><svg class="ico"><use href="#i-chart"/></svg>A-Plot</button>
   </div>
 </nav>
@@ -118,8 +118,8 @@
   <!-- Simulation -->
   <button id="sp-toggle-btn" onclick="toggleRightPanel()" title="Simulation/BASE ein/ausblenden">▶</button>
   <aside class="panel sim-panel">
-    <div class="sec-title fold" onclick="toggleSection('sim')" title="Abschnitt ein/ausklappen"><span><i class="chev">▾</i>Simulation</span><span class="sstatus stopped" id="sim-status">STOPPED</span></div>
-    <div class="sec-body" id="sec-sim">
+    <div class="sec-title fold" data-sec="sim" onclick="toggleSection('sim')" title="Abschnitt ein/ausklappen"><span><i class="chev">▾</i>Simulation</span><span class="sstatus stopped" id="sim-status">STOPPED</span></div>
+    <div class="sec-body" id="sec-sim" data-sec="sim">
     <div class="card">
       <div class="card-head"><svg class="ico"><use href="#i-pulse"/></svg>Ablauf</div>
       <div class="info-line" id="marker-info"></div>
@@ -146,11 +146,11 @@
         <button class="btn" id="btn-realtime" onclick="toggleRealtime()" title="Mit programmierter Geschwindigkeit ($VEL.CP) abspielen"><svg class="ico"><use href="#i-clock"/></svg>Echtzeit</button>
       </div>
     </div>
-    <div class="hint">F5 Play · F6 Stop · F7/F8 Satz vor/zurück · F9 Parse · Home/End Anfang/Ende</div>
+    <div class="hint" data-sec="sim">F5 Play · F6 Stop · F7/F8 Satz vor/zurück · F9 Parse · Home/End Anfang/Ende</div>
     </div>
 
-    <div class="sec-title fold" style="margin-top:6px" onclick="toggleSection('base')" title="Abschnitt ein/ausklappen"><span><i class="chev">▾</i>Base</span><small>BASE_DATA[n]</small></div>
-    <div class="sec-body" id="sec-base">
+    <div class="sec-title fold" data-sec="base" style="margin-top:6px" onclick="toggleSection('base')" title="Abschnitt ein/ausklappen"><span><i class="chev">▾</i>Base</span><small>BASE_DATA[n]</small></div>
+    <div class="sec-body" id="sec-base" data-sec="base">
     <div class="card">
       <div class="row" style="align-items:center;margin-bottom:8px">
         <button class="btn icon" id="base-nav-first" onclick="baseNavTo(0)" title="Erste BASE"><svg class="ico"><use href="#i-first"/></svg></button>
@@ -178,8 +178,8 @@
     </div>
     </div>
 
-    <div class="sec-title fold" style="margin-top:6px" onclick="toggleSection('tcp')" title="Abschnitt ein/ausklappen"><span><i class="chev">▾</i>TCP</span><small>TOOL_DATA[n]</small></div>
-    <div class="sec-body" id="sec-tcp">
+    <div class="sec-title fold" data-sec="tcp" style="margin-top:6px" onclick="toggleSection('tcp')" title="Abschnitt ein/ausklappen"><span><i class="chev">▾</i>TCP</span><small>TOOL_DATA[n]</small></div>
+    <div class="sec-body" id="sec-tcp" data-sec="tcp">
     <div class="card">
       <div class="row" style="align-items:center;margin-bottom:8px">
         <button class="btn icon" id="tcp-nav-first" onclick="tcpNavTo(0)" title="Erster TCP"><svg class="ico"><use href="#i-first"/></svg></button>
@@ -286,6 +286,6 @@
 <script src="./js/formats.js?v=20261026c"></script>
 <script src="./js/simulator.js?v=20261026c"></script>
 <script src="./js/placement.js?v=20261026c"></script>
-<script src="./js/host-api.js?v=20261026c"></script>
+<script src="./js/host-api.js?v=20261026d"></script>
 </body>
 </html>

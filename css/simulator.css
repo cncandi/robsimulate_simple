@@ -237,8 +237,14 @@ input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;bac
 .plc-tab td,.plc-tab th{padding:2px 4px;text-align:right}
 .plc-tab td:first-child{text-align:left}
 
-/* ── Einbettung (Host-Software): Bereiche ausblenden ──────── */
+/* ── Einbettung (Host-Software): Bereiche einzeln ausblenden (js/host-api.js) ── */
 body.rs-hide-header>header{display:none}
 body.rs-hide-toolbar>nav.toolbar{display:none}
 body.rs-hide-editor .ep,body.rs-hide-editor #ep-toggle-btn,body.rs-hide-editor #ep-resize-handle{display:none!important}
 body.rs-hide-panel .sim-panel,body.rs-hide-panel #sp-toggle-btn{display:none!important}
+body.rs-hide-sim [data-sec="sim"],body.rs-hide-base [data-sec="base"],body.rs-hide-tcp [data-sec="tcp"]{display:none!important}
+body.rs-hide-statusbar>footer.statusbar{display:none}
+body.rs-hide-legend .vp .legend{display:none}
+body.rs-hide-hint .vp .scene-hint{display:none}
+body.rs-hide-tb-view [data-grp="view"],body.rs-hide-tb-proj [data-grp="proj"],body.rs-hide-tb-render [data-grp="render"],
+body.rs-hide-tb-zoom [data-grp="zoom"],body.rs-hide-tb-path [data-grp="path"],body.rs-hide-tb-aplot [data-grp="aplot"]{display:none}

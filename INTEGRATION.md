@@ -157,15 +157,40 @@ Im Programm definierte Werkzeuge (`parsedData.tools`) haben Vorrang vor `tcpList
 Ziel: Die Host-Software hat **eigene** Schaltflächen (oder Menü/Tastenkürzel) und schickt Befehle an das Modul.
 Die Toolbar des Moduls wird dazu ausgeblendet, damit keine Bedienelemente doppelt vorhanden sind.
 
-### Einbettungsmodus (URL-Parameter)
-| Parameter | Wirkung |
-|---|---|
-| `embed=1` | nur 3D-Fenster: Kopfzeile, Toolbar, Editor und rechter Bereich (Simulation/BASE/TCP) aus |
-| `show=editor,panel,…` | mit `embed=1`: diese Bereiche doch anzeigen |
-| `hide=header,toolbar,editor,panel,sim,base,tcp` | einzelne Bereiche ausblenden (`editor` = Programm links, `panel` = ganzer rechter Bereich, `sim`/`base`/`tcp` = einzelne Abschnitte) |
-| `view=…`, `projection=…`, `render=…`, `path=…`, `aplot=1` | Startzustand (Werte wie bei den Befehlen) |
+### Bereiche einzeln ein-/ausblenden
+Jeder Bereich lässt sich unabhängig ein- und ausblenden, per URL beim Start oder per Befehl `ui` zur Laufzeit.
 
-Beispiele: `index.html?embed=1&view=iso&projection=ortho` (nur 3D), `index.html?embed=1&show=panel` (3D + Simulation/BASE/TCP)
+| Bereich | Inhalt |
+|---|---|
+| `header` | Kopfzeile (Logo, Roboter wählen, Öffnen, Speichern) |
+| `toolbar` | ganze Toolbar |
+| `tb-view` `tb-proj` `tb-render` `tb-zoom` `tb-path` `tb-aplot` | einzelne Toolbar-Gruppen (Ansichten, Perspektive/Ortho, Schattiert/Draht, Zoom/Einpassen, G-Code-Anzeige, A-Plot-Schalter) |
+| `editor` | Programm-Editor links |
+| `sim` | Abschnitt Simulation (rechts) |
+| `base` | Abschnitt BASE (rechts) |
+| `tcp` | Abschnitt TCP (rechts) |
+| `statusbar` | Statuszeile unten |
+| `legend` | Achsenlegende X/Y/Z im 3D-Fenster |
+| `hint` | Maushinweis im 3D-Fenster |
+| `aplot` | A-Plot / Robot Map |
+
+Gruppen: `panel` = `sim`,`base`,`tcp`; `tb-all` = alle Toolbar-Gruppen; `all` = alle Bereiche (außer `aplot`).
+Der rechte Bereich verschwindet automatisch, wenn `sim`, `base` und `tcp` aus sind, und erscheint, sobald einer davon an ist.
+
+| URL-Parameter | Wirkung |
+|---|---|
+| `embed=1` | nur 3D-Fenster mit Statuszeile: `header`, `toolbar`, `editor`, `sim`, `base`, `tcp` aus |
+| `hide=a,b,…` | diese Bereiche aus |
+| `show=a,b,…` | diese Bereiche an (wird nach `embed` und `hide` angewendet) |
+| `view=…`, `projection=…`, `render=…`, `path=…`, `aplot=1` | Startzustand |
+
+Beispiele:
+- nur 3D: `index.html?embed=1`
+- 3D + TCP-Abschnitt: `index.html?embed=1&show=tcp`
+- 3D + Simulation + BASE, ohne Statuszeile: `index.html?embed=1&show=sim,base&hide=statusbar`
+- volle Oberfläche ohne Ansichts-Gruppe: `index.html?hide=tb-view`
+
+Zur Laufzeit: `RobSim.cmd('ui', 'tcp', 'on')`, `RobSim.cmd('ui', 'sim,base', 'off')`, `RobSim.cmd('ui', 'editor', 'toggle')`.
 
 ### Mausbelegung im 3D-Fenster (fest)
 | Taste | Funktion |
@@ -188,7 +213,7 @@ Ungültige Werte lösen einen Fehler aus (`Error('unbekannte Ansicht: …')`).
 | `fit` | – | Alles in Bild (Einpassen) |
 | `path` | `all` \| `upto` \| `none` | Anzeige G-Code / G-Code bis Position / Anzeige aus |
 | `aplot` | `on` \| `off` \| `toggle` | Anzeige A-Plot (Robot Map) |
-| `ui` | Bereich `header` `toolbar` `editor` `panel` `sim` `base` `tcp`, Wert `on` \| `off` \| `toggle` | Bereiche ein-/ausblenden (`sim`/`base`/`tcp` = einzelne Abschnitte im rechten Bereich) |
+| `ui` | Bereich oder Liste (`"sim,base"`), Wert `on` \| `off` \| `toggle` | Bereiche ein-/ausblenden (Liste siehe „Bereiche einzeln ein-/ausblenden“) |
 | `getState` | – | Zustand abfragen |
 
 #### Editor (Programm übergeben)
@@ -246,7 +271,8 @@ erhalten, bei neuen Einträgen 0. Nach jeder Änderung rechnet das Modul die IK 
 Zustand (`RobSim.getState()` und Ergebnis jedes Befehls):
 ```json
 {"api":1,"view":"iso","projection":"persp","render":"shaded","path":"all","aplot":false,
- "ui":{"header":false,"toolbar":false,"editor":true,"panel":true,"sim":true,"base":true,"tcp":true},
+ "ui":{"header":false,"toolbar":false,"editor":false,"sim":false,"base":false,"tcp":true,"statusbar":true,"legend":true,"hint":true,
+       "tb-view":true,"tb-proj":true,"tb-render":true,"tb-zoom":true,"tb-path":true,"tb-aplot":true,"panel":true,"aplot":false},
  "format":"kuka","points":120,"steps":130,"t":0,"step":0,"line":1,
  "playing":false,"dir":1,"speed":40,"realtime":false,"status":"STOPPED","dirty":false,"ikPending":false,
  "base":{"active":1,"count":1},"tcp":{"active":1,"count":1}}

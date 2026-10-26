@@ -24,38 +24,36 @@
     return !(s === 'off' || s === 'aus' || s === 'false' || s === '0' || s === 'hide');
   }
   function aplotVisible() { var p = document.getElementById('aplot-panel'); return !!p && getComputedStyle(p).display !== 'none'; }
+  // ── Bereiche einzeln ein-/ausblenden ─────────────────────────────
+  // Jeder Bereich hat eine Body-Klasse rs-hide-<bereich> (CSS in simulator.css).
+  // Der rechte Bereich (panel) verschwindet automatisch, wenn sim, base und tcp aus sind.
+  var UI_PARTS = ['header', 'toolbar', 'editor', 'sim', 'base', 'tcp', 'statusbar', 'legend', 'hint',
+                  'tb-view', 'tb-proj', 'tb-render', 'tb-zoom', 'tb-path', 'tb-aplot'];
+  var UI_GROUPS = { panel: ['sim', 'base', 'tcp'], all: UI_PARTS.slice(), 'tb-all': ['tb-view', 'tb-proj', 'tb-render', 'tb-zoom', 'tb-path', 'tb-aplot'] };
   function uiVisible(part) {
-    switch (part) {
-      case 'header': return !document.body.classList.contains('rs-hide-header');
-      case 'toolbar': return !document.body.classList.contains('rs-hide-toolbar');
-      case 'editor': return !document.body.classList.contains('rs-hide-editor');
-      case 'panel': return !document.body.classList.contains('rs-hide-panel');
-      case 'sim': case 'base': case 'tcp': { var b = document.getElementById('sec-' + part); return !!b && b.style.display !== 'none'; }
-    }
-    return false;
+    if (part === 'aplot') return aplotVisible();
+    if (UI_GROUPS[part]) return UI_GROUPS[part].some(uiVisible);
+    if (UI_PARTS.indexOf(part) < 0) return false;
+    return !document.body.classList.contains('rs-hide-' + part);
+  }
+  function uiPanelSync() {
+    var on = UI_GROUPS.panel.some(uiVisible);
+    document.body.classList.toggle('rs-hide-panel', !on);
+    if (on) { var sp = document.querySelector('.sim-panel'); if (sp && sp.classList.contains('closed')) toggleRightPanel(false); }
   }
   function setUI(part, on) {
-    switch (part) {
-      case 'header': document.body.classList.toggle('rs-hide-header', !on); break;
-      case 'toolbar': document.body.classList.toggle('rs-hide-toolbar', !on); break;
-      case 'editor':   // ganz ausblenden inkl. Umschalter und Ziehgriff
-        document.body.classList.toggle('rs-hide-editor', !on);
-        if (on) { var ep = document.querySelector('.ep'); if (ep && ep._panelClosed) toggleLeftPanel(); }
-        break;
-      case 'panel':
-        document.body.classList.toggle('rs-hide-panel', !on);
-        if (on) toggleRightPanel(false);
-        break;
-      case 'sim': case 'base': case 'tcp': {   // Abschnitt im rechten Bereich ganz ausblenden
-        var b = document.getElementById('sec-' + part); if (!b) break;
-        b.style.display = on ? '' : 'none'; if (b.previousElementSibling) b.previousElementSibling.style.display = on ? '' : 'none';
-        break;
-      }
-      default: throw new Error('unbekannter Bereich: ' + part);
-    }
+    if (part === 'aplot') { setAPlot(on); return; }
+    var list = UI_GROUPS[part] || (UI_PARTS.indexOf(part) >= 0 ? [part] : null);
+    if (!list) throw new Error('unbekannter Bereich: ' + part + ' (möglich: ' + UI_PARTS.concat(Object.keys(UI_GROUPS), 'aplot').join(', ') + ')');
+    list.forEach(function (p) {
+      document.body.classList.toggle('rs-hide-' + p, !on);
+      if (p === 'editor' && on) { var ep = document.querySelector('.ep'); if (ep && ep._panelClosed) toggleLeftPanel(); }
+      if (/^(sim|base|tcp)$/.test(p) && on) { var bd = document.getElementById('sec-' + p); if (bd && bd.classList.contains('collapsed')) toggleSection(p, false); }
+    });
+    uiPanelSync();
     window.dispatchEvent(new Event('resize'));
   }
-
+  function uiState() { var o = {}; UI_PARTS.concat('panel', 'aplot').forEach(function (p) { o[p] = uiVisible(p); }); return o; }
 
   // ── Hilfen Editor / Simulation / BASE / TCP ─────────────────────
   var FR = ['x', 'y', 'z', 'a', 'b', 'c'];
@@ -115,8 +113,7 @@
     return {
       api: API_VERSION,
       view: curView, projection: projMode, render: renderMode, path: pathMode, aplot: aplotVisible(),
-      ui: { header: uiVisible('header'), toolbar: uiVisible('toolbar'), editor: uiVisible('editor'), panel: uiVisible('panel'),
-            sim: uiVisible('sim'), base: uiVisible('base'), tcp: uiVisible('tcp') },
+      ui: uiState(),
       format: progFmt, points: parsedData.positions.length, steps: (parsedData.steps || []).length,
       t: Math.round(sim.t * 1000) / 1000, step: sim.stepIdx, line: curLine(),
       playing: sim.playing, dir: sim.dir, speed: +document.getElementById('spd-s').value, realtime: !!_realtimeMode,
@@ -144,7 +141,9 @@
     fit: function () { fitView(); },
     path: function (v) { var n = PATH_ALIAS[lc(v)] || lc(v); if (!/^(all|upto|none)$/.test(n)) throw new Error('unbekannte G-Code-Anzeige: ' + v); setPathMode(n); },
     aplot: function (v) { setAPlot(bool(v, aplotVisible())); },
-    ui: function (part, v) { part = lc(part); setUI(part, bool(v, uiVisible(part))); },
+    ui: function (part, v) {    // part: Bereich oder Liste "sim,base"; v: on|off|toggle
+      String(part || '').split(',').map(lc).filter(Boolean).forEach(function (p) { setUI(p, bool(v, uiVisible(p))); });
+    },
     loadProgram: function (text, name) {
       if (typeof text === 'object' && text) { loadProgramFiles(text, name); }
       else {
@@ -266,10 +265,11 @@
   //    Startwerte: ?view=oben&projection=ortho&render=wireframe&path=upto&aplot=1
   function applyUrl() {
     var q = new URLSearchParams(location.search), hide = [];
-    if (q.get('embed') === '1') hide.push('header', 'toolbar', 'editor', 'panel');   // nur 3D-Fenster
+    if (q.get('embed') === '1') hide.push('header', 'toolbar', 'editor', 'panel');   // nur 3D-Fenster (+ Statuszeile)
     (q.get('hide') || '').split(',').forEach(function (h) { h = lc(h); if (h) hide.push(h); });
     var show = (q.get('show') || '').split(',').map(lc);
-    hide.filter(function (h) { return show.indexOf(h) < 0; }).forEach(function (h) { try { setUI(h, false); } catch (e) {} });
+    hide.forEach(function (h) { try { setUI(h, false); } catch (e) { console.warn(e.message); } });
+    show.forEach(function (h) { if (h) { try { setUI(h, true); } catch (e) { console.warn(e.message); } } });
     ['projection', 'render', 'path', 'view'].forEach(function (k) { if (q.has(k)) { try { cmd(k, q.get(k)); } catch (e) { console.warn(e.message); } } });
     if (q.has('aplot')) { try { cmd('aplot', q.get('aplot')); } catch (e) {} }
   }
