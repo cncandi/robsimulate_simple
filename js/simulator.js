@@ -749,36 +749,8 @@ function downloadFile(content, filename) {
 var tcpList  = [{ x:364.5, y:0, z:46.5, a:0, b:90, c:0, name:'TCP 1' }];
 var baseList = [{ x:0, y:0, z:0, a:0, b:0, c:0, name:'BASE 1' }];
 
-// Glatte Rundungen bei STL: Normalen je Ecke aus allen angrenzenden Dreiecken mitteln,
-// aber nur über Kanten unter dem Knickwinkel – scharfe Kanten bleiben scharf.
-function _smoothNormals(geo, creaseDeg) {
-  var pos = geo.attributes.position; if (!pos || geo.index) { geo.computeVertexNormals(); return geo; }
-  var p = pos.array, nV = pos.count, nT = Math.floor(nV / 3), cosC = Math.cos((creaseDeg || 30) * Math.PI / 180);
-  var fn = new Float32Array(nT * 3), fu = new Float32Array(nT * 3);   // Flächennormale (flächengewichtet / normiert)
-  for (var t = 0; t < nT; t++) {
-    var i = t * 9, ax = p[i+3]-p[i], ay = p[i+4]-p[i+1], az = p[i+5]-p[i+2], bx = p[i+6]-p[i], by = p[i+7]-p[i+1], bz = p[i+8]-p[i+2];
-    var nx = ay*bz-az*by, ny = az*bx-ax*bz, nz = ax*by-ay*bx, l = Math.hypot(nx, ny, nz) || 1;
-    fn[t*3] = nx; fn[t*3+1] = ny; fn[t*3+2] = nz; fu[t*3] = nx/l; fu[t*3+1] = ny/l; fu[t*3+2] = nz/l;
-  }
-  var map = new Map(), key = new Array(nV);
-  for (var v = 0; v < nV; v++) {
-    var k = Math.round(p[v*3]*500) + '_' + Math.round(p[v*3+1]*500) + '_' + Math.round(p[v*3+2]*500);
-    key[v] = k; var l2 = map.get(k); if (l2) l2.push(v / 3 | 0); else map.set(k, [v / 3 | 0]);
-  }
-  var out = new Float32Array(nV * 3);
-  for (v = 0; v < nV; v++) {
-    var t0 = v / 3 | 0, list = map.get(key[v]), sx = 0, sy = 0, sz = 0;
-    for (var j = 0; j < list.length; j++) {
-      var t1 = list[j];
-      if (fu[t0*3]*fu[t1*3] + fu[t0*3+1]*fu[t1*3+1] + fu[t0*3+2]*fu[t1*3+2] >= cosC) { sx += fn[t1*3]; sy += fn[t1*3+1]; sz += fn[t1*3+2]; }
-    }
-    var ln = Math.hypot(sx, sy, sz) || 1; out[v*3] = sx/ln; out[v*3+1] = sy/ln; out[v*3+2] = sz/ln;
-  }
-  geo.setAttribute('normal', new THREE.BufferAttribute(out, 3));
-  return geo;
-}
 function _stlMesh(buf, color, extra) {
-  var geo = _smoothNormals(stlLoader.parse(buf), 32);
+  var geo = stlLoader.parse(buf);   // Normalen mit Knickwinkel geglättet (js/graphics.js)
   return new THREE.Mesh(geo, new THREE.MeshPhongMaterial(Object.assign({color:color, shininess:80}, extra||{})));
 }
 function _removeMesh(m) { if (m) { scene.remove(m); m.geometry.dispose(); } }
