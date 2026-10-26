@@ -187,19 +187,68 @@ Ungültige Werte lösen einen Fehler aus (`Error('unbekannte Ansicht: …')`).
 | `fit` | – | Alles in Bild (Einpassen) |
 | `path` | `all` \| `upto` \| `none` | Anzeige G-Code / G-Code bis Position / Anzeige aus |
 | `aplot` | `on` \| `off` \| `toggle` | Anzeige A-Plot (Robot Map) |
-| `ui` | Bereich `header` `toolbar` `editor` `panel`, Wert `on` \| `off` \| `toggle` | Bereiche ein-/ausblenden |
-| `loadProgram` | Text, Dateiname (optional, bestimmt das Format) – oder Objekt `{datei: text}` für Hauptprogramm + Module | Öffnen + Parse; Promise erfüllt sich, wenn die IK fertig ist |
-| `getProgram` | – | liefert den Programmtext (z. B. nach „Übernehmen“ in der Map) |
-| `play` | `fwd` \| `back` | Play vor/zurück |
-| `pause` | – | anhalten |
-| `seek` | Satzposition `t` (0 … N−1) | Positionsregler |
+| `ui` | Bereich `header` `toolbar` `editor` `panel` `sim` `base` `tcp`, Wert `on` \| `off` \| `toggle` | Bereiche ein-/ausblenden (`sim`/`base`/`tcp` = einzelne Abschnitte im rechten Bereich) |
 | `getState` | – | Zustand abfragen |
+
+#### Editor (Programm übergeben)
+Die Host-Software kann den Editor des Moduls ausblenden (`ui editor off` bzw. `hide=editor`) und ihren eigenen Editor verwenden.
+Zeilennummern sind 1-basiert.
+
+| Befehl | Werte | Wirkung |
+|---|---|---|
+| `loadProgram` | Text, Dateiname (optional) – oder `{datei: text}` für Hauptprogramm + Module | setzen + parsen; Promise erfüllt sich nach der IK (Zustand) |
+| `setProgram` | Text, Dateiname (optional) | nur setzen, nicht parsen; Simulation ist gesperrt (`dirty: true`), bis `parse` |
+| `parse` | – | parsen + IK (wie F9); Promise erfüllt sich nach der IK |
+| `getProgram` | – | Programmtext (z. B. nach „Übernehmen“ in der Map oder „Teilposition übernehmen“) |
+| `setFormat` | `kuka` \| `abb` \| `fanuc` \| `apt` | Format; ein geparstes Programm wird umgerechnet |
+| `gotoLine` | Zeile | Roboter an die Position dieser Programmzeile (Cursor im Host-Editor → Simulation) |
+| `getLine` | – | aktuelle Programmzeile der Simulation |
+
+Ereignisse für den Host-Editor: `line` `{line, t, step}` bei jedem Zeilenwechsel der Simulation (Zeile im Host-Editor
+markieren) und `program` `{text, dirty}`, wenn das Modul den Programmtext selbst ändert.
+
+#### Simulation
+| Befehl | Werte | Wirkung |
+|---|---|---|
+| `play` | `fwd` \| `back` | abspielen (Fehler, wenn das Programm nach einer Änderung nicht geparst ist) |
+| `pause` / `stop` | – | anhalten |
+| `start` / `end` | – | zum Anfang / Ende |
+| `step` | `fwd` \| `back` | einen Satz vor / zurück |
+| `seek` | Satzposition `t` (0 … N−1, Kommazahl erlaubt) | Position setzen |
+| `seekPercent` | 0 … 100 | Position in Prozent |
+| `speed` | 1 … 100 | Tempo (Schieberegler) |
+| `realtime` | `on` \| `off` \| `toggle` | Echtzeit mit programmierter Geschwindigkeit ($VEL.CP) |
+
+#### BASE (Nummer n = BASE_DATA[n], 1-basiert)
+Werte: `{x, y, z, a, b, c, name}` in mm/Grad, bezogen auf den Roboterfuß. Fehlende Felder bleiben beim Ändern
+erhalten, bei neuen Einträgen 0. Nach jeder Änderung rechnet das Modul die IK automatisch neu (Ereignis `state`, `ikPending`).
+
+| Befehl | Werte | Wirkung |
+|---|---|---|
+| `getBases` | – | `{active, list:[…]}` |
+| `setBase` | n, Werte | BASE n ändern; n = Anzahl+1 legt eine neue an |
+| `setBases` | Liste | alle BASE ersetzen |
+| `selectBase` | n | BASE n in der Eingabe anzeigen |
+| `deleteBase` | n | BASE n löschen |
+| `optimizeBase` | – | Teilposition optimieren (Promise): `{found:true, result:{bn, base, before, after, diag}}` oder `{found:false, message}` |
+| `applyOptimizedBase` / `undoOptimizedBase` | – | Vorschlag übernehmen / zurücknehmen (Promise nach IK) |
+
+#### TCP (Nummer n = TOOL_DATA[n], bezogen auf den Flansch)
+| Befehl | Werte | Wirkung |
+|---|---|---|
+| `getTools` | – | `{active, list:[…], program:{nr: {…}}}` – `program` = im Programm definierte Werkzeuge (haben Vorrang) |
+| `setTool` | n, Werte | TCP n ändern; n = Anzahl+1 legt einen neuen an |
+| `setTools` | Liste | alle TCP ersetzen |
+| `selectTool` | n | TCP n in der Eingabe anzeigen |
+| `deleteTool` | n | TCP n löschen (mindestens einer bleibt) |
 
 Zustand (`RobSim.getState()` und Ergebnis jedes Befehls):
 ```json
 {"api":1,"view":"iso","projection":"persp","render":"shaded","path":"all","aplot":false,
- "ui":{"header":false,"toolbar":false,"editor":true,"panel":true},
- "format":"kuka","points":120,"t":0,"playing":false,"ikPending":false}
+ "ui":{"header":false,"toolbar":false,"editor":true,"panel":true,"sim":true,"base":true,"tcp":true},
+ "format":"kuka","points":120,"steps":130,"t":0,"step":0,"line":1,
+ "playing":false,"dir":1,"speed":40,"realtime":false,"status":"STOPPED","dirty":false,"ikPending":false,
+ "base":{"active":1,"count":1},"tcp":{"active":1,"count":1}}
 ```
 `view` ist `null`, sobald der Nutzer die Ansicht mit der Maus gedreht hat. Damit kann die Host-Software ihre
 Schaltflächen (aktiv/inaktiv) synchron halten.
@@ -208,8 +257,10 @@ Schaltflächen (aktiv/inaktiv) synchron halten.
 | Ereignis | Wann | Daten |
 |---|---|---|
 | `ready` | Modul geladen, Befehle möglich | Zustand |
-| `state` | Zustand geändert (auch durch Maus oder Modul-Toolbar) | Zustand |
-| `parsed` | `loadProgram` fertig (IK berechnet) | Zustand |
+| `state` | Zustand geändert (auch durch Maus, Modul-Bedienung oder laufende Simulation; höchstens 5× je Sekunde) | Zustand |
+| `parsed` | `loadProgram`/`parse` fertig (IK berechnet) | Zustand |
+| `line` | Programmzeile der Simulation gewechselt | `{line, t, step}` |
+| `program` | Programmtext im Modul geändert | `{text, dirty}` |
 
 Gleiche Domain: `RobSim.on('state', st => …)`. Fremde Domain / WebView2: als Nachricht (siehe unten).
 
@@ -294,6 +345,13 @@ RobSim("zoom", "in");  RobSim("path", "none");       RobSim("aplot", "on");
 | Alles in Bild | `fit` |
 | Anzeige A-Plot | `aplot` `toggle` (oder `on`/`off`) |
 | Anzeige G-Code / G-Code bis / Anzeige aus | `path` `all` / `upto` / `none` |
+| Play / Rückwärts / Stop | `play` `fwd` / `back`, `pause` |
+| Anfang / Ende / Satz vor / Satz zurück | `start` / `end` / `step` `fwd` / `step` `back` |
+| Positionsregler / Tempo / Echtzeit | `seekPercent` / `speed` / `realtime` |
+| Cursor im Host-Editor | `gotoLine` |
+| Parse & Load | `parse` (oder `loadProgram` mit Text) |
+| BASE / TCP-Eingabe | `setBase` / `setTool` |
+| Teilposition optimieren | `optimizeBase`, danach `applyOptimizedBase` |
 
 ## 5. Unterstützter KRL-Umfang
 
@@ -341,8 +399,8 @@ Kein Server-Speicher, keine Cookies, keine Anmeldung.
 
 ## 8. Noch nicht vorhanden – bei Bedarf ergänzen
 
-- Nachrichten-Befehle `loadRobot`, `setBase` und Ereignisse `applied` (Map übernommen), `verify`
-  (Ansicht/Darstellung/Anzeige, `loadProgram`, `getProgram`, `play/pause/seek` sind vorhanden, Abschnitt 4a).
+- Befehle `loadRobot`, Robot-Map-Befehle (Scan, Auto-Weg, Übernehmen) und Ereignis `verify`
+  (Ansicht, Editor, Simulation, BASE, TCP sind vorhanden, Abschnitt 4a).
 - **Offline-Paket**: three.js und JSZip lokal statt CDN.
 
 ## 9. Grenzen

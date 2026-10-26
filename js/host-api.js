@@ -30,6 +30,7 @@
       case 'toolbar': return !document.body.classList.contains('rs-hide-toolbar');
       case 'editor': { var ep = document.querySelector('.ep'); return !!ep && !ep._panelClosed; }
       case 'panel': { var sp = document.querySelector('.sim-panel'); return !!sp && !sp.classList.contains('closed'); }
+      case 'sim': case 'base': case 'tcp': { var b = document.getElementById('sec-' + part); return !!b && b.style.display !== 'none'; }
     }
     return false;
   }
@@ -39,11 +40,60 @@
       case 'toolbar': document.body.classList.toggle('rs-hide-toolbar', !on); break;
       case 'editor': if (uiVisible('editor') !== on) toggleLeftPanel(); break;
       case 'panel': toggleRightPanel(!on); break;
+      case 'sim': case 'base': case 'tcp': {   // Abschnitt im rechten Bereich ganz ausblenden
+        var b = document.getElementById('sec-' + part); if (!b) break;
+        b.style.display = on ? '' : 'none'; if (b.previousElementSibling) b.previousElementSibling.style.display = on ? '' : 'none';
+        break;
+      }
       default: throw new Error('unbekannter Bereich: ' + part);
     }
     window.dispatchEvent(new Event('resize'));
   }
 
+
+  // ── Hilfen Editor / Simulation / BASE / TCP ─────────────────────
+  var FR = ['x', 'y', 'z', 'a', 'b', 'c'];
+  function frame(src, def) {
+    var o = {}; src = src || {};
+    FR.forEach(function (k) { var v = src[k] !== undefined ? src[k] : src[k.toUpperCase()]; o[k] = v !== undefined ? +v || 0 : (def ? def[k] || 0 : 0); });
+    o.name = src.name != null ? String(src.name) : (def && def.name) || '';
+    return o;
+  }
+  function copyList(l) { return l.map(function (e) { return frame(e); }); }
+  function idx(n, len, allowNew) {   // Nummer 1…len (BASE_DATA[n], TOOL_DATA[n]) → Index
+    var i = Math.round(+n) - 1;
+    if (!(i >= 0 && i < len + (allowNew ? 1 : 0))) throw new Error('ungültige Nummer: ' + n + ' (1…' + (len + (allowNew ? 1 : 0)) + ')');
+    return i;
+  }
+  function needSteps() { if (!(parsedData.steps && parsedData.steps.length)) throw new Error('kein Programm geladen'); }
+  function click(id) { var b = document.getElementById(id); if (b) b.click(); }
+  function curLine() { return typeof _gutActive === 'number' && _gutActive >= 0 ? _gutActive + 1 : null; }
+  function lineToT(line) {
+    var L = parsedData.posOfLine; if (!L || !L.length) throw new Error('kein Programm geladen');
+    var i = L[Math.max(0, Math.min(L.length - 1, Math.round(+line) - 1))];
+    if (!(i >= 0)) throw new Error('Zeile ' + line + ' gehört zu keiner Position'); return i;
+  }
+  function plcRun() {
+    return new Promise(function (res) {
+      if (_progDirty()) throw new Error('Programm geändert – erst parsen');
+      _plc.res = null; plcStart();
+      var box = document.getElementById('plc-box');
+      if (!box || !box.querySelector('#plc-bar')) return res({ found: false, message: box ? box.textContent.trim() : '' });
+      var t0 = Date.now();
+      (function poll() {
+        if (_plc.res) return res({ found: true, result: JSON.parse(JSON.stringify(_plc.res)) });
+        if (Date.now() - t0 > 300000 || !box.querySelector('#plc-bar')) return res({ found: false, message: box.textContent.trim() });
+        setTimeout(poll, 100);
+      })();
+    });
+  }
+
+  function togglePlayDir(dir) {
+    if (_progDirty()) throw new Error('Programm geändert – erst parsen');
+    if (sim.playing && sim.dir === dir) return;
+    if (_ikPending) { _playAfterParse = dir; return; }
+    startPlay(dir);
+  }
   function waitIK(timeoutMs) {
     return new Promise(function (res, rej) {
       var t0 = Date.now();
@@ -59,8 +109,14 @@
     return {
       api: API_VERSION,
       view: curView, projection: projMode, render: renderMode, path: pathMode, aplot: aplotVisible(),
-      ui: { header: uiVisible('header'), toolbar: uiVisible('toolbar'), editor: uiVisible('editor'), panel: uiVisible('panel') },
-      format: progFmt, points: parsedData.positions.length, t: sim.t, playing: sim.playing, ikPending: !!_ikPending
+      ui: { header: uiVisible('header'), toolbar: uiVisible('toolbar'), editor: uiVisible('editor'), panel: uiVisible('panel'),
+            sim: uiVisible('sim'), base: uiVisible('base'), tcp: uiVisible('tcp') },
+      format: progFmt, points: parsedData.positions.length, steps: (parsedData.steps || []).length,
+      t: Math.round(sim.t * 1000) / 1000, step: sim.stepIdx, line: curLine(),
+      playing: sim.playing, dir: sim.dir, speed: +document.getElementById('spd-s').value, realtime: !!_realtimeMode,
+      status: (document.getElementById('sim-status') || {}).textContent || '',
+      dirty: _progDirty(), ikPending: !!_ikPending,
+      base: { active: baseNavIdx + 1, count: baseList.length }, tcp: { active: tcpNavIdx + 1, count: tcpList.length }
     };
   }
 
@@ -91,10 +147,74 @@
       }
       return waitIK().then(function (st) { emit('parsed', st); return st; });
     },
+    // Editor
     getProgram: function () { return _codeEl.value; },
-    play: function (dir) { startPlay(lc(dir) === 'back' || dir === -1 ? -1 : 1); },
-    pause: function () { pauseSim(); },
+    setProgram: function (text, name) {     // Text setzen ohne Parsen (Simulation gesperrt bis parse)
+      if (name) { var f = detectProgramFormat(String(text), String(name)); if (f && f !== progFmt) setProgramFormat(f); }
+      _codeEl.value = String(text == null ? '' : text); _codeEl.dispatchEvent(new Event('input'));
+    },
+    parse: function () { parseAndLoad(); return waitIK().then(function (st) { emit('parsed', st); return st; }); },
+    setFormat: function (f) { f = lc(f); if (!/^(kuka|abb|fanuc|apt)$/.test(f)) throw new Error('unbekanntes Format: ' + f); setProgramFormat(f); },
+    gotoLine: function (line) {             // Programmzeile (1-basiert) → Roboter an diese Position
+      if (_progDirty() || _ikPending) throw new Error('Programm nicht geparst');
+      var i = lineToT(line); pauseSim(); applySimT(i);
+      var si = parsedData.stepOfPos ? parsedData.stepOfPos[i] : -1; if (si >= 0) applyStep(si);
+    },
+    getLine: function () { return curLine(); },
+    // Simulation
+    play: function (dir) { togglePlayDir(lc(dir) === 'back' || dir === -1 ? -1 : 1); },
+    pause: function () { pauseSim(); setStatus('paused', 'PAUSED'); },
+    stop: function () { pauseSim(); setStatus('paused', 'PAUSED'); },
+    start: function () { click('b-start'); },
+    end: function () { click('b-end'); },
+    step: function (dir) { needSteps(); click(lc(dir) === 'back' || dir === -1 ? 'b-steprev' : 'b-stepfwd'); },
     seek: function (t) { pauseSim(); applySimT(Math.max(0, Math.min(Math.max(0, parsedData.positions.length - 1), +t || 0))); },
+    seekPercent: function (p) { var N = parsedData.positions.length; pauseSim(); applySimT(Math.max(0, Math.min(1, (+p || 0) / 100)) * Math.max(0, N - 1)); },
+    speed: function (v) {
+      var n = Math.max(1, Math.min(100, Math.round(+v))); if (!(n > 0)) throw new Error('ungültiges Tempo: ' + v);
+      var el = document.getElementById('spd-s'); el.value = n; el.dispatchEvent(new Event('input'));
+    },
+    realtime: function (v) { var on = bool(v, !!_realtimeMode); if (on !== !!_realtimeMode) toggleRealtime(); },
+    // BASE (Nummer n = BASE_DATA[n], 1-basiert)
+    getBases: function () { return { active: baseNavIdx + 1, list: copyList(baseList) }; },
+    setBase: function (n, data) {
+      var i = idx(n, baseList.length, true);
+      if (i === baseList.length) baseList.push(frame(data, { name: 'BASE ' + (i + 1) }));
+      else baseList[i] = frame(data, baseList[i]);
+      baseNavTo(i); applyBase(); return { active: i + 1, list: copyList(baseList) };
+    },
+    setBases: function (list) {
+      if (!Array.isArray(list) || !list.length) throw new Error('Liste erwartet');
+      baseList.length = 0; list.forEach(function (e, i) { baseList.push(frame(e, { name: 'BASE ' + (i + 1) })); });
+      baseNavTo(Math.min(baseNavIdx, baseList.length - 1)); applyBase(); return { active: baseNavIdx + 1, list: copyList(baseList) };
+    },
+    selectBase: function (n) { baseNavTo(idx(n, baseList.length)); },
+    deleteBase: function (n) { baseNavTo(idx(n, baseList.length)); baseDelCurrent(); return { active: baseNavIdx + 1, list: copyList(baseList) }; },
+    optimizeBase: function () { return plcRun(); },
+    applyOptimizedBase: function () { if (!_plc.res) throw new Error('kein Vorschlag vorhanden'); plcApply(); return waitIK(); },
+    undoOptimizedBase: function () { if (!_plc.undo) throw new Error('nichts zurückzunehmen'); plcUndo(); return waitIK(); },
+    // TCP (Nummer n = TOOL_DATA[n], bezogen auf den Flansch)
+    getTools: function () {
+      var pt = parsedData.tools || {}, prog = {};
+      Object.keys(pt).forEach(function (k) { prog[k] = frame(pt[k]); });
+      return { active: tcpNavIdx + 1, list: copyList(tcpList), program: prog };
+    },
+    setTool: function (n, data) {
+      var i = idx(n, tcpList.length, true);
+      if (i === tcpList.length) tcpList.push(frame(data, { name: 'TCP ' + (i + 1) }));
+      else tcpList[i] = frame(data, tcpList[i]);
+      tcpNavTo(i); applyTCP(); return { active: i + 1, list: copyList(tcpList) };
+    },
+    setTools: function (list) {
+      if (!Array.isArray(list) || !list.length) throw new Error('Liste erwartet');
+      tcpList.length = 0; list.forEach(function (e, i) { tcpList.push(frame(e, { name: 'TCP ' + (i + 1) })); });
+      tcpNavTo(Math.min(tcpNavIdx, tcpList.length - 1)); applyTCP(); return { active: tcpNavIdx + 1, list: copyList(tcpList) };
+    },
+    selectTool: function (n) { tcpNavTo(idx(n, tcpList.length)); },
+    deleteTool: function (n) {
+      if (tcpList.length <= 1) throw new Error('mindestens ein TCP erforderlich');
+      tcpNavTo(idx(n, tcpList.length)); tcpDelCurrent(); return { active: tcpNavIdx + 1, list: copyList(tcpList) };
+    },
     getState: function () { return getState(); }
   };
 
@@ -156,6 +276,16 @@
     off: function (ev, cb) { listeners[ev] = (listeners[ev] || []).filter(function (f) { return f !== cb; }); },
     _emitState: function () { var st = getState(), s = JSON.stringify(st); if (s === lastState) return; lastState = s; emit('state', st); }
   };
+
+  // Änderungen, die nicht über Befehle laufen (Maus, Modul-Bedienung, Simulation, Map „Übernehmen“), melden
+  var lastProg = null, lastLine = null;
+  setInterval(function () {
+    if (!applyUrl.done) return;
+    var code = _codeEl.value;
+    if (code !== lastProg) { if (lastProg !== null) emit('program', { text: code, dirty: _progDirty() }); lastProg = code; }
+    var ln = curLine(); if (ln !== lastLine) { lastLine = ln; emit('line', { line: ln, t: sim.t, step: sim.stepIdx }); }
+    window.RobSim._emitState();
+  }, 200);
 
   window.addEventListener('load', function () {
     applyUrl();
