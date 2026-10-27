@@ -305,7 +305,7 @@ Konfiguration per Kopfkommentar `;P3D-ROTARY AXIS=X BASE=2 D0=60.3 D1=60.3 L=500
 
 | Befehl | Wirkung |
 |---|---|
-| `rotaryAxis({on, axis:'X'\|'Y'\|'Z', base, d0, d1, L, chuck:'start'\|'end', path:'upto'}, 'noparse'?)` | Drehachse = X/Y/Z von BASE n, Rohling Ø d0 (Anfang) bis d1 (Ende) × L, Spannfutter am Anfang (start) oder Ende (end); ohne `'noparse'` wird das geladene Programm neu geparst |
+| `rotaryAxis({on, axis:'X'\|'Y'\|'Z', base, d0, d1, L, chuck:'start'\|'end', chuckD, chuckW, chuckGrip, chuckJaws:2\|3\|4, path:'upto'}, 'noparse'?)` | Drehachse = X/Y/Z von BASE n, Rohling Ø d0 (Anfang) bis d1 (Ende) × L, Spannfutter am Anfang (start) oder Ende (end), Futter-Ø, Breite, Spannlänge und Backenanzahl (fehlend = automatisch); ohne `'noparse'` wird das geladene Programm neu geparst |
 | `rotaryAxis(null)` | nur Programm (EK/Kopfkommentar) entscheidet |
 | `rotaryAxis()` | Zustand `{on, axis, base, d0, L, e1, note}` (auch in `getState().rotary`) |
 

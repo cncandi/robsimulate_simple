@@ -263,6 +263,8 @@
       rotAxis.explicit = cfg ? { on: cfg.on !== false, axis: cfg.axis ? String(cfg.axis).toUpperCase() : undefined,
         base: cfg.base != null ? Math.max(1, Math.round(+cfg.base) || 1) : undefined,
         chuck: cfg.chuck != null ? (/^(end|ende|right|rechts)$/i.test(String(cfg.chuck)) ? 'end' : 'start') : undefined,
+        chuckD: cfg.chuckD > 0 ? +cfg.chuckD : undefined, chuckW: cfg.chuckW > 0 ? +cfg.chuckW : undefined, chuckGrip: cfg.chuckGrip > 0 ? +cfg.chuckGrip : undefined,
+        chuckJaws: [2, 3, 4].indexOf(+cfg.chuckJaws) >= 0 ? +cfg.chuckJaws : undefined,
         d0: cfg.d0 != null ? Math.max(1, +cfg.d0 || 60) : undefined, d1: cfg.d1 != null ? Math.max(1, +cfg.d1 || 60) : undefined, L: cfg.L != null ? Math.max(1, +cfg.L || 500) : undefined } : null;
       if (rotAxis.explicit) Object.keys(rotAxis.explicit).forEach(function (k) { if (rotAxis.explicit[k] === undefined) delete rotAxis.explicit[k]; });
       if (cfg && cfg.path) commands.path(cfg.path);

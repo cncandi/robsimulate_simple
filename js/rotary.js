@@ -48,7 +48,7 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
     rotAxis.on = want && hasE1;
     var src = Object.assign({}, rotAxis.header || {}, ex || {});
     rotAxis.axis = axisOf(src.axis, 'X');
-    rotAxis.chuck = src.chuck === 'end' ? 'end' : 'start'; rotAxis.d0 = num(src.d0, 60); rotAxis.d1 = num(src.d1, rotAxis.d0); rotAxis.L = num(src.L, 500); // d1: Ø am Ende (konischer Rohling)
+    rotAxis.chuck = src.chuck === 'end' ? 'end' : 'start'; rotAxis.chuckD = num(src.chuckD, 0); rotAxis.chuckW = num(src.chuckW, 0); rotAxis.chuckGrip = num(src.chuckGrip, 0); rotAxis.chuckJaws = [2, 3, 4].indexOf(src.chuckJaws) >= 0 ? src.chuckJaws : 3; rotAxis.d0 = num(src.d0, 60); rotAxis.d1 = num(src.d1, rotAxis.d0); rotAxis.L = num(src.L, 500); // d1: Ø am Ende (konischer Rohling)
     var bn = 0; P.some(function (p) { if (typeof p.E1 === 'number' && p.baseN > 0) { bn = p.baseN; return true; } return false; });
     rotAxis.base = src.base || parsedData.ekBase || bn || 0;
     // E1 je Position (fehlende Werte = letzter bekannter Wert)
@@ -85,13 +85,15 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
     var r = Math.max(1, rotAxis.d0 / 2), r1 = Math.max(1, rotAxis.d1 / 2), L = Math.max(1, rotAxis.L), inner = new THREE.Group();
     var body = new THREE.Mesh(new THREE.CylinderGeometry(r1, r, L, 48, 1, false), new THREE.MeshStandardMaterial({ color: 0x9ea5ae, metalness: 0.8, roughness: 0.35 }));
     body.position.y = L / 2; inner.add(body);
-    // Spannfutter am Rohlinganfang (u = 0) oder -ende (u = L)
-    var cr = rotAxis.chuck === 'end' ? r1 : r, ch = Math.max(20, cr * 0.5);
-    var chuck = new THREE.Mesh(new THREE.CylinderGeometry(cr * 1.9, cr * 1.9, ch, 48), new THREE.MeshStandardMaterial({ color: 0x4a5160, metalness: 0.6, roughness: 0.45 }));
+    // Spannfutter am Rohlinganfang (u = 0) oder -ende (u = L); Maße aus P3D-SO (Maschine & Material), sonst automatisch
+    var cr = rotAxis.chuck === 'end' ? r1 : r, ch = rotAxis.chuckW > 0 ? rotAxis.chuckW : Math.max(20, cr * 0.5);
+    var cD = rotAxis.chuckD > 0 ? Math.max(rotAxis.chuckD, 2 * cr + 2) : cr * 3.8, grip = rotAxis.chuckGrip > 0 ? rotAxis.chuckGrip : ch * 0.6, nj = rotAxis.chuckJaws || 3;
+    var chuck = new THREE.Mesh(new THREE.CylinderGeometry(cD / 2, cD / 2, ch, 48), new THREE.MeshStandardMaterial({ color: 0x4a5160, metalness: 0.6, roughness: 0.45 }));
     chuck.position.y = rotAxis.chuck === 'end' ? L + ch / 2 : -ch / 2; inner.add(chuck);
-    for (var k = 0; k < 3; k++) {   // drei Spannbacken
-      var a = k * Math.PI * 2 / 3, jaw = new THREE.Mesh(new THREE.BoxGeometry(cr * 0.45, ch * 0.6, cr * 0.7), new THREE.MeshStandardMaterial({ color: 0x343a44, metalness: 0.6, roughness: 0.5 }));
-      jaw.position.set(Math.cos(a) * cr * 1.25, rotAxis.chuck === 'end' ? L - ch * 0.3 : ch * 0.3, Math.sin(a) * cr * 1.25); jaw.rotation.y = -a; inner.add(jaw);
+    var jt = Math.min(cr * 0.45, (cD / 2 - cr) * 0.9);
+    for (var k = 0; k < nj; k++) {   // Spannbacken
+      var a = k * Math.PI * 2 / nj, jaw = new THREE.Mesh(new THREE.BoxGeometry(jt, grip, cr * 0.7), new THREE.MeshStandardMaterial({ color: 0x343a44, metalness: 0.6, roughness: 0.5 }));
+      jaw.position.set(Math.cos(a) * (cr + jt / 2), rotAxis.chuck === 'end' ? L - grip / 2 : grip / 2, Math.sin(a) * (cr + jt / 2)); jaw.rotation.y = -a; inner.add(jaw);
     }
     // Zylinder liegt entlang Y → auf die Drehachse des BASE drehen
     if (rotAxis.axis === 'X') inner.rotation.z = -Math.PI / 2;
