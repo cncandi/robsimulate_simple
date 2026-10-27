@@ -377,6 +377,8 @@ function parsePos(str){
   const p={X:0,Y:0,Z:0,A:0,B:0,C:0,S:null,T:null};
   let m;const rx=/([XYZABCST])\s+([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)/g;
   while((m=rx.exec(str))!==null)if(m[1]in p)p[m[1]]=parseFloat(m[2]);
+  const ex=/\b(E[1-6])\s+([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)/g; // externe Achsen
+  while((m=ex.exec(str))!==null)p[m[1]]=parseFloat(m[2]);
   return p;
 }
 function parseVal(s){
@@ -422,6 +424,7 @@ function parseKRL(code){
   function snap(){return{variables:{...vars},digitalIn:{...din},digitalOut:{...dout},analogOut:{...anout},analogIn:{...anin}};}
   function pushStep(ln,type,extra){steps.push({lineNum:ln,type,...extra,snapshot:snap()});}
   let curBase = 0; // aktiver BASE (BASE_DATA[n]); 0 = Welt-Nullframe
+  let ekBase = 0;  // gekoppelte Drehachse (EK)
   let curTool = 1; // aktives TOOL (TOOL_DATA[n]); 1 = Standard
   const tools = {}; // TOOL_DATA[n]={X..} im Programm → Werte für die Simulation
   // KRL-{X..} ist die Code-Koordinate -> als rel merken (Welt = rel + aktueller BASE-Offset, separat angewandt)
@@ -472,6 +475,8 @@ function parseKRL(code){
     if((m=line.match(/^TOOL_DATA\[(\d+)\]\s*=\s*\{([^}]*)\}/i))){const t=parsePos(m[2]),nm=(raw.split(';')[1]||'').trim();tools[+m[1]]={x:t.X,y:t.Y,z:t.Z,a:t.A,b:t.B,c:t.C,name:nm||('TOOL_DATA['+m[1]+']')};continue;}
     if((m=line.match(/^\$TOOL\s*=\s*TOOL_DATA\[(\d+)\]/i))){curTool=+m[1];pushStep(ln,'tool',{n:+m[1]});continue;}
     if((m=line.match(/^\$BASE\s*=\s*BASE_DATA\[(\d+)\]/i))){curBase=+m[1];pushStep(ln,'base',{n:+m[1]});continue;}
+    // mathematisch gekoppelte Drehachse: $BASE=EK(MACHINE_DEF[2].ROOT,MACHINE_DEF[2].MECH_TYPE,BASE_DATA[n])
+    if((m=line.match(/^\$BASE\s*=\s*EK\s*\(.*BASE_DATA\[(\d+)\]/i))){curBase=+m[1];ekBase=ekBase||+m[1];pushStep(ln,'base',{n:+m[1],ek:true});continue;}
     if((m=line.match(/^\$VEL\.CP\s*=\s*([\d.]+)/i))){_velCP=parseFloat(m[1])||0.167;pushStep(ln,'velcp',{v:_velCP});continue;}
     if((m=line.match(/^\$VEL\.PTP\s*=\s*([\d.]+)/i))){pushStep(ln,'velptp',{v:parseFloat(m[1])});continue;}
     if((m=line.match(/^\$ACC\.CP\s*=\s*([\d.]+)/i))){pushStep(ln,'acccp',{v:parseFloat(m[1])});continue;}
@@ -506,7 +511,7 @@ function parseKRL(code){
         pushStep(ln,'calc',{target:_target,expr:_expr});continue;}}
     pushStep(ln,'other',{raw:line});
   }
-  return{steps,positions,tools,finalState:{variables:{...vars},digitalIn:{...din},digitalOut:{...dout},analogOut:{...anout},analogIn:{...anin}}};
+  return{steps,positions,tools,ekBase,finalState:{variables:{...vars},digitalIn:{...din},digitalOut:{...dout},analogOut:{...anout},analogIn:{...anin}}};
 }
 // ═══════════════════════════════════════════════════
 // THREE.JS SETUP (Z-up scene = KUKA Robot CS)
@@ -932,6 +937,7 @@ function bakeBaseOffset() {
       if (typeof p.rel.X !== 'number' || !isFinite(p.rel.X)) return;
       var bn = (p.baseN != null) ? p.baseN : 0; // jeder Punkt nutzt seinen eigenen aktiven BASE
       var w = baseToWorld(p.rel, bn);
+      if (window._rotBake) w = window._rotBake(p, w, bn); // Drehachse E1
       p.X=w.X; p.Y=w.Y; p.Z=w.Z; p.A=w.A; p.B=w.B; p.C=w.C;
     } catch(e) {}
   });
@@ -2286,6 +2292,8 @@ function _applyPathMode(t){
 function updateVisitedPath(t){
   _applyPathMode(t);
   if(!visitedLine)return;
+  if(typeof rotAxis!=='undefined'&&rotAxis.on){visitedLine.visible=false;visitedHead.visible=false;return;} // Bahn dreht mit dem Werkstück (pathGrp)
+  visitedLine.visible=true;
   const cutIdx=(trajectory.length&&t>0)?Math.floor(simTToTrajT(t)*trajMax):0;
   if(cutIdx<1){visitedLine.geometry.setDrawRange(0,0);visitedHead.visible=false;return;}
   const n=_visitedVtx[cutIdx];
@@ -2299,6 +2307,7 @@ function setStatus(cls,txt){const el=document.getElementById('sim-status');el.cl
 function applySimT(t){
   const pos=parsedData.positions,N=pos.length;if(!N)return;
   sim.t=Math.max(0,Math.min(N-1,t));
+  if(window._rotApply)window._rotApply(sim.t);
   document.getElementById('pos-s').value=sim.t;
   {const pe=document.getElementById('pos-pct'); if(pe) pe.textContent=(N>1?Math.round(sim.t/(N-1)*100):0)+' %';}
   const idx=Math.min(Math.floor(sim.t),N-1);
@@ -2378,14 +2387,14 @@ let _meanSegCache = { pos: null, v: 1 };
 function _meanSegLen(pos) {
   if (_meanSegCache.pos === pos) return _meanSegCache.v;
   let sum = 0;
-  for (let i = 1; i < pos.length; i++) sum += Math.sqrt((pos[i].X-pos[i-1].X)**2 + (pos[i].Y-pos[i-1].Y)**2 + (pos[i].Z-pos[i-1].Z)**2);
+  for (let i = 1; i < pos.length; i++) { const a = pos[i-1].part||pos[i-1], b = pos[i].part||pos[i]; sum += Math.sqrt((b.X-a.X)**2 + (b.Y-a.Y)**2 + (b.Z-a.Z)**2); }
   _meanSegCache = { pos: pos, v: pos.length > 1 ? Math.max(0.1, sum / (pos.length - 1)) : 1 };
   return _meanSegCache.v;
 }
 function _simCalcSpeed(pos, curPosIdx, nextPosIdx) {
   // VEL.CP gilt für den Zielpunkt (nextPosIdx), nicht den Ausgangspunkt
   const curVelCP = (pos[nextPosIdx] && pos[nextPosIdx].velCP) ? pos[nextPosIdx].velCP : 0.167;
-  const p0 = pos[curPosIdx], p1 = pos[nextPosIdx];
+  const q0 = pos[curPosIdx], q1 = pos[nextPosIdx], p0 = q0 && (q0.part||q0), p1 = q1 && (q1.part||q1); // Drehachse: Bahn am Werkstück
   const segDist = (p0 && p1 && nextPosIdx !== curPosIdx)
     ? Math.sqrt((p1.X-p0.X)**2+(p1.Y-p0.Y)**2+(p1.Z-p0.Z)**2) : 0;
   const velMmS = curVelCP * 1000;
@@ -2437,7 +2446,7 @@ function _simAdvance(N, dt, speed, velCP, displayMmMin) {
     else if (newT <= 0)   { newT = 0;   pauseSim(); setStatus('paused','START'); }
     else {
       // Ist-Geschwindigkeit (Bahn-mm pro echter Sekunde, geglättet) neben dem Sollwert
-      const P = parsedData.positions, D = t => { const i = Math.min(Math.floor(t), P.length - 2), f = t - i;
+      const P = parsedData.positions.map(p => p.part||p), D = t => { const i = Math.min(Math.floor(t), P.length - 2), f = t - i;
         return i < 0 ? 0 : Math.hypot(P[i+1].X-P[i].X, P[i+1].Y-P[i].Y, P[i+1].Z-P[i].Z) * f; };
       let dist = 0; const a = Math.min(sim.t, newT), b = Math.max(sim.t, newT);
       if (Math.floor(a) === Math.floor(b)) dist = Math.abs(D(b) - D(a));
@@ -2555,12 +2564,13 @@ function buildScene(positions){ requestRender();
   visitedLine=visitedHead=plannedLine=null;markerGrp.visible=false;
   if(!positions.length)return;
   const N=positions.length, arr=new Float32Array(N*3);
-  positions.forEach((p,i)=>{arr[i*3]=p.X;arr[i*3+1]=p.Y;arr[i*3+2]=p.Z;});
+  const PP=p=>p.part||p; // Drehachse: Bahn im Werkstück (E1 = 0), Gruppe dreht mit
+  positions.forEach((p,i)=>{const q=PP(p);arr[i*3]=q.X;arr[i*3+1]=q.Y;arr[i*3+2]=q.Z;});
   if(N>1){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(arr,3));
     plannedLine=new THREE.Line(g,new THREE.LineBasicMaterial({color:PLANNED_COL,linewidth:pathLineWidth}));
     plannedLine.frustumCulled=false;pathGrp.add(plannedLine);}
   if(N<=FRAME_LIMIT){
-    positions.forEach((pos,i)=>{const g=makeFrame(pos);g.userData.posIdx=i;posGrp.add(g);});
+    positions.forEach((pos,i)=>{const g=makeFrame(Object.assign({type:pos.type},PP(pos)));g.userData.posIdx=i;posGrp.add(g);});
   }else{
     const col=new Float32Array(N*3),c=new THREE.Color();
     positions.forEach((p,i)=>{c.setHex(TYPE_COL[p.type]!==undefined?TYPE_COL[p.type]:0xffffff);col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b;});
@@ -2650,6 +2660,7 @@ function parseAndLoad(){
   parsedData.virtBase = !parsedData.positions.some(p => p.baseN > 0) && !parsedData.steps.some(s => s.type === 'base' && s.n > 0);
   if (parsedData.virtBase) parsedData.positions.forEach(p => { if (p.rel && isFinite(p.rel.X)) p.baseN = 1; });
   ensureBasesForProgram(); // Eintraege fuer alle referenzierten BASE_DATA[n] sicherstellen
+  if(window._rotPrepare)window._rotPrepare(code); // Drehachse E1 erkennen, Rohling anlegen
   { const h = document.getElementById('base-virt'); if (h) h.style.display = parsedData.virtBase && parsedData.positions.length ? '' : 'none'; }
   renderTcpNav(); renderBaseNav(); _showProgInfo();
   if (progFmt === 'abb' && ((parsedData.missing || []).length || (parsedData.loads || []).length)) setTimeout(function() { _resolveModules(!!_resolveModules._ask); }, 0);
@@ -2870,7 +2881,9 @@ function _aCollRadius() { var el = document.getElementById('aplot-coll'); return
 function _aCollides(angles, i) {
   var pos = _aPos(); if (i < 0 || i >= pos.length) return false;
   var B = _aPartPrefix(pos), o = i * 6, pts = fkAll(angles).pts, R = _aCollRadius();
+  var rot = window._rotHitFn ? window._rotHitFn(pos, i) : null; // Drehachse: Teil = Zylinder um die Achse
   function hit(P, r) {
+    if (rot) return rot(P, r);
     var dx = Math.max(B[o] - P[0], 0, P[0] - B[o+3]), dy = Math.max(B[o+1] - P[1], 0, P[1] - B[o+4]), dz = Math.max(B[o+2] - P[2], 0, P[2] - B[o+5]);
     return dx*dx + dy*dy + dz*dz < r*r;
   }

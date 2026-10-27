@@ -1,6 +1,6 @@
 # RobSimul Simple – Integration in andere Software
 
-Stand: 26.10.2026 · Repository `cncandi/robsimulate_simple` · Live: https://cnc-technik.de/robsimul/simple/
+Stand: 27.10.2026 · Repository `cncandi/robsimulate_simple` · Live: https://cnc-technik.de/robsimul/simple/
 
 ## 1. Was die Software ist
 
@@ -295,6 +295,21 @@ Zustand (`RobSim.getState()` und Ergebnis jedes Befehls):
 ```
 `view` ist `null`, sobald der Nutzer die Ansicht mit der Maus gedreht hat. Damit kann die Host-Software ihre
 Schaltflächen (aktiv/inaktiv) synchron halten.
+
+### Drehachse E1 (mathematisch gekoppelt, z. B. Schnecken auf Rohling drucken)
+KRL mit gekoppelter Zusatzachse wird erkannt: `$BASE=EK(MACHINE_DEF[2].ROOT,MACHINE_DEF[2].MECH_TYPE,BASE_DATA[n])`
+und Sätze `LIN {X …,Y …,Z …,A …,B …,C …,E1 …}`. Die Positionen stehen im mitdrehenden Werkstück-KS (BASE n);
+Welt = BASE · Rot(E1) · Position. Bahn, Zielpunkte und Rohling drehen in der Simulation mit E1, der Roboter folgt.
+Konfiguration per Kopfkommentar `;P3D-ROTARY AXIS=X BASE=2 D0=60.3 L=500` oder Befehl:
+
+| Befehl | Wirkung |
+|---|---|
+| `rotaryAxis({on, axis:'X'\|'Y'\|'Z', base, d0, L, path:'upto'}, 'noparse'?)` | Drehachse = X/Y/Z von BASE n, Rohling Ø d0 × L; ohne `'noparse'` wird das geladene Programm neu geparst |
+| `rotaryAxis(null)` | nur Programm (EK/Kopfkommentar) entscheidet |
+| `rotaryAxis()` | Zustand `{on, axis, base, d0, L, e1, note}` (auch in `getState().rotary`) |
+
+Ist BASE n noch nicht eingemessen (alle Werte 0), setzt der Simulator eine Standardlage vor dem Roboter.
+Kollisionsprüfung: Teil = Zylinder um die Achse bis zum Düsenradius des Satzes.
 
 ### Ereignisse
 | Ereignis | Wann | Daten |

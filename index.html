@@ -130,7 +130,7 @@ if(!/^(dark|light|industrial)$/.test(t||''))t='industrial';document.documentElem
     <div class="sec-body" id="sec-sim" data-sec="sim">
     <div class="card">
       <div class="card-head"><svg class="ico"><use href="#i-pulse"/></svg>Ablauf</div>
-      <div class="info-line" id="marker-info"></div>
+      <div class="info-line" id="marker-info"></div><div class="info-line" id="rot-e1" hidden></div>
       <div class="info-line" id="prog-info" style="display:none;white-space:normal"></div>
       <div class="info-line warn" id="sim-warn" style="display:none" title="Klicken: zur ersten Stelle springen"></div>
       <button class="btn" id="plc-quick" style="display:none;margin-top:6px;width:100%" onclick="plcStart()" title="Prüfen, ob die Lage des Teils (BASE) die Ursache ist, und eine bessere Lage suchen">Teilposition prüfen und optimieren</button>
@@ -300,9 +300,10 @@ if(!/^(dark|light|industrial)$/.test(t||''))t='industrial';document.documentElem
 <script src="./js/vendor/three-r128/FXAAShader.js"></script>
 <script src="./js/dp-solver.js?v=20261026f"></script>
 <script src="./js/formats.js?v=20261026f"></script>
-<script src="./js/simulator.js?v=20261026f"></script>
+<script src="./js/simulator.js?v=20261027a"></script>
+<script src="./js/rotary.js?v=20261027a"></script>
 <script src="./js/graphics.js?v=20261026h" data-key="robsimSimple.quality"></script>
 <script src="./js/placement.js?v=20261026f"></script>
-<script src="./js/host-api.js?v=20261026g"></script>
+<script src="./js/host-api.js?v=20261027a"></script>
 </body>
 </html>

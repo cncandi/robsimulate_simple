@@ -122,7 +122,8 @@
       status: (document.getElementById('sim-status') || {}).textContent || '',
       dirty: _progDirty(), ikPending: !!_ikPending,
       robot: typeof _currentRobotName !== 'undefined' ? _currentRobotName : '',
-      base: { active: baseNavIdx + 1, count: baseList.length }, tcp: { active: tcpNavIdx + 1, count: tcpList.length }
+      base: { active: baseNavIdx + 1, count: baseList.length }, tcp: { active: tcpNavIdx + 1, count: tcpList.length },
+      rotary: window._rotState ? window._rotState() : null
     };
   }
 
@@ -252,6 +253,19 @@
       var s = null; try { s = JSON.parse(localStorage.getItem('robsimSimple.robot') || 'null'); } catch (e) {}
       var n = typeof _currentRobotName !== 'undefined' ? _currentRobotName : '';
       return { name: n, zip_url: s && s.name === n && s.zip_url ? s.zip_url : null };
+    },
+    // Drehachse E1 (mathematisch gekoppelt): {on, axis:'X'|'Y'|'Z', base:n, d0, L} oder {on:false}; null = nur aus Programm
+    rotaryAxis: function (cfg, opt) {   // opt 'noparse': nur setzen, Programm nicht neu parsen
+      if (cfg === undefined) return window._rotState ? window._rotState() : null;
+      if (cfg !== null && typeof cfg !== 'object') throw new Error('Objekt {on, axis, base, d0, L} erwartet');
+      if (cfg && cfg.axis !== undefined && !/^[XYZ]$/i.test(String(cfg.axis))) throw new Error('axis muss X, Y oder Z sein');
+      rotAxis.explicit = cfg ? { on: cfg.on !== false, axis: cfg.axis ? String(cfg.axis).toUpperCase() : undefined,
+        base: cfg.base != null ? Math.max(1, Math.round(+cfg.base) || 1) : undefined,
+        d0: cfg.d0 != null ? Math.max(1, +cfg.d0 || 60) : undefined, L: cfg.L != null ? Math.max(1, +cfg.L || 500) : undefined } : null;
+      if (rotAxis.explicit) Object.keys(rotAxis.explicit).forEach(function (k) { if (rotAxis.explicit[k] === undefined) delete rotAxis.explicit[k]; });
+      if (cfg && cfg.path) commands.path(cfg.path);
+      if (opt !== 'noparse' && parsedData.positions.length && !_progDirty()) { parseAndLoad(); return waitIK().then(function () { return window._rotState(); }); }
+      return window._rotState();
     },
     getState: function () { return getState(); }
   };
