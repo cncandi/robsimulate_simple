@@ -6,7 +6,7 @@
 // Konfiguration: Befehl rotaryAxis (host-api.js) oder Kopfkommentar
 //   ;P3D-ROTARY AXIS=X BASE=2 D0=60.3 L=500
 // ═══════════════════════════════════════════════════════════════════
-var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', base: 0, d0: 60, L: 500, e1: null, placed: '' };
+var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', base: 0, d0: 60, d1: 60, L: 500, e1: null, placed: '' };
 (function () {
   'use strict';
   var I4 = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
@@ -35,7 +35,7 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
     var m = String(code || '').match(/^\s*;\s*P3D-ROTARY\b(.*)$/im);
     if (!m) return null;
     var o = {}; m[1].replace(/([A-Z0-9_]+)\s*=\s*([^\s;]+)/gi, function (_, k, v) { o[k.toUpperCase()] = v; return ''; });
-    return { axis: axisOf(o.AXIS, 'X'), base: o.BASE ? Math.round(num(o.BASE, 0)) : null, d0: num(o.D0, null), L: num(o.L, null) };
+    return { axis: axisOf(o.AXIS, 'X'), base: o.BASE ? Math.round(num(o.BASE, 0)) : null, d0: num(o.D0, null), d1: num(o.D1, null), L: num(o.L, null) };
   }
 
   // Vor dem Einbrennen der BASE: Drehachse aktiv? Konfiguration zusammenführen, BASE-Lage vorbelegen
@@ -48,7 +48,7 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
     rotAxis.on = want && hasE1;
     var src = Object.assign({}, rotAxis.header || {}, ex || {});
     rotAxis.axis = axisOf(src.axis, 'X');
-    rotAxis.d0 = num(src.d0, 60); rotAxis.L = num(src.L, 500);
+    rotAxis.d0 = num(src.d0, 60); rotAxis.d1 = num(src.d1, rotAxis.d0); rotAxis.L = num(src.L, 500); // d1: Ø am Ende (konischer Rohling)
     var bn = 0; P.some(function (p) { if (typeof p.E1 === 'number' && p.baseN > 0) { bn = p.baseN; return true; } return false; });
     rotAxis.base = src.base || parsedData.ekBase || bn || 0;
     // E1 je Position (fehlende Werte = letzter bekannter Wert)
@@ -82,14 +82,15 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
 
   function buildWork() {
     while (workGrp.children.length) { var c = workGrp.children.pop(); c.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
-    var r = Math.max(1, rotAxis.d0 / 2), L = Math.max(1, rotAxis.L), inner = new THREE.Group();
-    var body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 48, 1, false), new THREE.MeshStandardMaterial({ color: 0x9aa4b2, metalness: 0.55, roughness: 0.4 }));
+    var r = Math.max(1, rotAxis.d0 / 2), r1 = Math.max(1, rotAxis.d1 / 2), L = Math.max(1, rotAxis.L), inner = new THREE.Group();
+    var body = new THREE.Mesh(new THREE.CylinderGeometry(r1, r, L, 48, 1, false), new THREE.MeshStandardMaterial({ color: 0x9aa4b2, metalness: 0.55, roughness: 0.4 }));
     body.position.y = L / 2; inner.add(body);
     // Längsstreifen und Spannscheibe machen die Drehung sichtbar
-    for (var k = 0; k < 4; k++) {
-      var a = k * Math.PI / 2, bar = new THREE.Mesh(new THREE.BoxGeometry(r * 0.18, L * 1.002, r * 0.06),
+    for (var k = 0; k < 4; k++) {   // Längsstreifen auf der (ggf. konischen) Mantelfläche
+      var a = k * Math.PI / 2, p0 = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r), p1 = new THREE.Vector3(Math.cos(a) * r1, L, Math.sin(a) * r1);
+      var dir = p1.clone().sub(p0), len = dir.length(), bar = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(1.5, Math.min(r, r1) * 0.07), Math.max(1.5, Math.min(r, r1) * 0.07), len * 1.002, 8),
         new THREE.MeshStandardMaterial({ color: k ? 0x2d6cdf : 0xf0a020, roughness: 0.6 }));
-      bar.position.set(Math.cos(a) * r, L / 2, Math.sin(a) * r); bar.rotation.y = -a; inner.add(bar);
+      bar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize()); bar.position.copy(p0).add(p1).multiplyScalar(0.5); inner.add(bar);
     }
     var chuck = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.9, r * 1.9, Math.max(20, r * 0.5), 32), new THREE.MeshStandardMaterial({ color: 0x4a5160, metalness: 0.6, roughness: 0.45 }));
     chuck.position.y = -Math.max(20, r * 0.5) / 2; inner.add(chuck);
@@ -115,7 +116,7 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
     var el = document.getElementById('rot-e1'); if (el) { el.hidden = false; el.textContent = 'Drehachse E1 ' + e1At(t).toFixed(1) + '°'; }
   };
   window._rotState = function () {
-    return { on: rotAxis.on, axis: rotAxis.axis, base: rotAxis.base, d0: rotAxis.d0, L: rotAxis.L, e1: rotAxis.on ? Math.round(e1At(sim.t) * 10) / 10 : null, note: rotAxis.placed };
+    return { on: rotAxis.on, axis: rotAxis.axis, base: rotAxis.base, d0: rotAxis.d0, d1: rotAxis.d1, L: rotAxis.L, e1: rotAxis.on ? Math.round(e1At(sim.t) * 10) / 10 : null, note: rotAxis.placed };
   };
   window._rotPart = function (p) { return p.part || p; };
   // Kollision (Robot Map / Prüfung): gedrucktes Teil bei Satz i als Zylinder um die Drehachse,
@@ -128,7 +129,7 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
       var N = pos.length, H = new Float64Array(N * 3), lo = 0, hi = rotAxis.L;
       for (var j = 0; j < N; j++) {
         var q = pos[j].rel;
-        var rj = rotAxis.d0 / 2;
+        var rj = Math.min(rotAxis.d0, rotAxis.d1) / 2;
         if (q && typeof pos[j].E1 === 'number') { var v = [q.X, q.Y, q.Z]; rj = Math.max(rj, Math.hypot(v[(k + 1) % 3], v[(k + 2) % 3]) - 0.5); lo = Math.min(lo, v[k]); hi = Math.max(hi, v[k]); }
         H[j * 3] = rj;   // Teil reicht höchstens bis an die Düse (Lagen wachsen radial nach außen) H[j * 3 + 1] = lo; H[j * 3 + 2] = hi;
       }

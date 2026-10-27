@@ -300,11 +300,11 @@ Schaltflächen (aktiv/inaktiv) synchron halten.
 KRL mit gekoppelter Zusatzachse wird erkannt: `$BASE=EK(MACHINE_DEF[2].ROOT,MACHINE_DEF[2].MECH_TYPE,BASE_DATA[n])`
 und Sätze `LIN {X …,Y …,Z …,A …,B …,C …,E1 …}`. Die Positionen stehen im mitdrehenden Werkstück-KS (BASE n);
 Welt = BASE · Rot(E1) · Position. Bahn, Zielpunkte und Rohling drehen in der Simulation mit E1, der Roboter folgt.
-Konfiguration per Kopfkommentar `;P3D-ROTARY AXIS=X BASE=2 D0=60.3 L=500` oder Befehl:
+Konfiguration per Kopfkommentar `;P3D-ROTARY AXIS=X BASE=2 D0=60.3 D1=60.3 L=500` (D1 = Ø am Rohlingende, konisch) oder Befehl:
 
 | Befehl | Wirkung |
 |---|---|
-| `rotaryAxis({on, axis:'X'\|'Y'\|'Z', base, d0, L, path:'upto'}, 'noparse'?)` | Drehachse = X/Y/Z von BASE n, Rohling Ø d0 × L; ohne `'noparse'` wird das geladene Programm neu geparst |
+| `rotaryAxis({on, axis:'X'\|'Y'\|'Z', base, d0, d1, L, path:'upto'}, 'noparse'?)` | Drehachse = X/Y/Z von BASE n, Rohling Ø d0 (Anfang) bis d1 (Ende) × L; ohne `'noparse'` wird das geladene Programm neu geparst |
 | `rotaryAxis(null)` | nur Programm (EK/Kopfkommentar) entscheidet |
 | `rotaryAxis()` | Zustand `{on, axis, base, d0, L, e1, note}` (auch in `getState().rotary`) |
 
