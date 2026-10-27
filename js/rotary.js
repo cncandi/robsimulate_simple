@@ -6,7 +6,7 @@
 // Konfiguration: Befehl rotaryAxis (host-api.js) oder Kopfkommentar
 //   ;P3D-ROTARY AXIS=X BASE=2 D0=60.3 L=500
 // ═══════════════════════════════════════════════════════════════════
-var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', base: 0, d0: 60, d1: 60, L: 500, e1: null, placed: '' };
+var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', base: 0, d0: 60, d1: 60, L: 500, chuck: 'start', e1: null, placed: '' };
 (function () {
   'use strict';
   var I4 = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
@@ -35,7 +35,7 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
     var m = String(code || '').match(/^\s*;\s*P3D-ROTARY\b(.*)$/im);
     if (!m) return null;
     var o = {}; m[1].replace(/([A-Z0-9_]+)\s*=\s*([^\s;]+)/gi, function (_, k, v) { o[k.toUpperCase()] = v; return ''; });
-    return { axis: axisOf(o.AXIS, 'X'), base: o.BASE ? Math.round(num(o.BASE, 0)) : null, d0: num(o.D0, null), d1: num(o.D1, null), L: num(o.L, null) };
+    return { chuck: /^(END|ENDE|RIGHT|RECHTS)$/i.test(o.CHUCK || '') ? 'end' : (o.CHUCK ? 'start' : undefined), axis: axisOf(o.AXIS, 'X'), base: o.BASE ? Math.round(num(o.BASE, 0)) : null, d0: num(o.D0, null), d1: num(o.D1, null), L: num(o.L, null) };
   }
 
   // Vor dem Einbrennen der BASE: Drehachse aktiv? Konfiguration zusammenführen, BASE-Lage vorbelegen
@@ -48,7 +48,7 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
     rotAxis.on = want && hasE1;
     var src = Object.assign({}, rotAxis.header || {}, ex || {});
     rotAxis.axis = axisOf(src.axis, 'X');
-    rotAxis.d0 = num(src.d0, 60); rotAxis.d1 = num(src.d1, rotAxis.d0); rotAxis.L = num(src.L, 500); // d1: Ø am Ende (konischer Rohling)
+    rotAxis.chuck = src.chuck === 'end' ? 'end' : 'start'; rotAxis.d0 = num(src.d0, 60); rotAxis.d1 = num(src.d1, rotAxis.d0); rotAxis.L = num(src.L, 500); // d1: Ø am Ende (konischer Rohling)
     var bn = 0; P.some(function (p) { if (typeof p.E1 === 'number' && p.baseN > 0) { bn = p.baseN; return true; } return false; });
     rotAxis.base = src.base || parsedData.ekBase || bn || 0;
     // E1 je Position (fehlende Werte = letzter bekannter Wert)
@@ -83,19 +83,16 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
   function buildWork() {
     while (workGrp.children.length) { var c = workGrp.children.pop(); c.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
     var r = Math.max(1, rotAxis.d0 / 2), r1 = Math.max(1, rotAxis.d1 / 2), L = Math.max(1, rotAxis.L), inner = new THREE.Group();
-    var body = new THREE.Mesh(new THREE.CylinderGeometry(r1, r, L, 48, 1, false), new THREE.MeshStandardMaterial({ color: 0x9aa4b2, metalness: 0.55, roughness: 0.4 }));
+    var body = new THREE.Mesh(new THREE.CylinderGeometry(r1, r, L, 48, 1, false), new THREE.MeshStandardMaterial({ color: 0x9ea5ae, metalness: 0.8, roughness: 0.35 }));
     body.position.y = L / 2; inner.add(body);
-    // Längsstreifen und Spannscheibe machen die Drehung sichtbar
-    for (var k = 0; k < 4; k++) {   // Längsstreifen auf der (ggf. konischen) Mantelfläche
-      var a = k * Math.PI / 2, p0 = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r), p1 = new THREE.Vector3(Math.cos(a) * r1, L, Math.sin(a) * r1);
-      var dir = p1.clone().sub(p0), len = dir.length(), bar = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(1.5, Math.min(r, r1) * 0.07), Math.max(1.5, Math.min(r, r1) * 0.07), len * 1.002, 8),
-        new THREE.MeshStandardMaterial({ color: k ? 0x2d6cdf : 0xf0a020, roughness: 0.6 }));
-      bar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize()); bar.position.copy(p0).add(p1).multiplyScalar(0.5); inner.add(bar);
+    // Spannfutter am Rohlinganfang (u = 0) oder -ende (u = L)
+    var cr = rotAxis.chuck === 'end' ? r1 : r, ch = Math.max(20, cr * 0.5);
+    var chuck = new THREE.Mesh(new THREE.CylinderGeometry(cr * 1.9, cr * 1.9, ch, 48), new THREE.MeshStandardMaterial({ color: 0x4a5160, metalness: 0.6, roughness: 0.45 }));
+    chuck.position.y = rotAxis.chuck === 'end' ? L + ch / 2 : -ch / 2; inner.add(chuck);
+    for (var k = 0; k < 3; k++) {   // drei Spannbacken
+      var a = k * Math.PI * 2 / 3, jaw = new THREE.Mesh(new THREE.BoxGeometry(cr * 0.45, ch * 0.6, cr * 0.7), new THREE.MeshStandardMaterial({ color: 0x343a44, metalness: 0.6, roughness: 0.5 }));
+      jaw.position.set(Math.cos(a) * cr * 1.25, rotAxis.chuck === 'end' ? L - ch * 0.3 : ch * 0.3, Math.sin(a) * cr * 1.25); jaw.rotation.y = -a; inner.add(jaw);
     }
-    var chuck = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.9, r * 1.9, Math.max(20, r * 0.5), 32), new THREE.MeshStandardMaterial({ color: 0x4a5160, metalness: 0.6, roughness: 0.45 }));
-    chuck.position.y = -Math.max(20, r * 0.5) / 2; inner.add(chuck);
-    var jaw = new THREE.Mesh(new THREE.BoxGeometry(r * 0.5, Math.max(20, r * 0.5) * 1.05, r * 1.6), new THREE.MeshStandardMaterial({ color: 0xf0a020 }));
-    jaw.position.set(r * 1.2, -Math.max(20, r * 0.5) / 2, 0); inner.add(jaw);
     // Zylinder liegt entlang Y → auf die Drehachse des BASE drehen
     if (rotAxis.axis === 'X') inner.rotation.z = -Math.PI / 2;
     else if (rotAxis.axis === 'Z') inner.rotation.x = Math.PI / 2;
@@ -116,7 +113,7 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
     var el = document.getElementById('rot-e1'); if (el) { el.hidden = false; el.textContent = 'Drehachse E1 ' + e1At(t).toFixed(1) + '°'; }
   };
   window._rotState = function () {
-    return { on: rotAxis.on, axis: rotAxis.axis, base: rotAxis.base, d0: rotAxis.d0, d1: rotAxis.d1, L: rotAxis.L, e1: rotAxis.on ? Math.round(e1At(sim.t) * 10) / 10 : null, note: rotAxis.placed };
+    return { on: rotAxis.on, axis: rotAxis.axis, base: rotAxis.base, d0: rotAxis.d0, d1: rotAxis.d1, L: rotAxis.L, chuck: rotAxis.chuck, e1: rotAxis.on ? Math.round(e1At(sim.t) * 10) / 10 : null, note: rotAxis.placed };
   };
   window._rotPart = function (p) { return p.part || p; };
   // Kollision (Robot Map / Prüfung): gedrucktes Teil bei Satz i als Zylinder um die Drehachse,

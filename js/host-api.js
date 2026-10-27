@@ -114,7 +114,7 @@
       api: API_VERSION,
       theme: document.documentElement.getAttribute('data-theme') || 'industrial',
       quality: window.RSGfx ? RSGfx.quality() : 'standard',
-      view: curView, projection: projMode, render: renderMode, path: pathMode, aplot: aplotVisible(),
+      view: curView, projection: projMode, render: renderMode, path: pathMode, aplot: aplotVisible(), frames: showFrames,
       ui: uiState(),
       format: progFmt, points: parsedData.positions.length, steps: (parsedData.steps || []).length,
       t: Math.round(sim.t * 1000) / 1000, step: sim.stepIdx, line: curLine(),
@@ -156,6 +156,7 @@
     },
     path: function (v) { var n = PATH_ALIAS[lc(v)] || lc(v); if (!/^(all|upto|none)$/.test(n)) throw new Error('unbekannte G-Code-Anzeige: ' + v); setPathMode(n); },
     aplot: function (v) { setAPlot(bool(v, aplotVisible())); },
+    frames: function (v) { setFrames(bool(v, showFrames)); return showFrames; },   // Koordinatensysteme (Welt, BASE, TCP, Zielpunkte)
     ui: function (part, v) {    // part: Bereich oder Liste "sim,base"; v: on|off|toggle
       String(part || '').split(',').map(lc).filter(Boolean).forEach(function (p) { setUI(p, bool(v, uiVisible(p))); });
     },
@@ -261,6 +262,7 @@
       if (cfg && cfg.axis !== undefined && !/^[XYZ]$/i.test(String(cfg.axis))) throw new Error('axis muss X, Y oder Z sein');
       rotAxis.explicit = cfg ? { on: cfg.on !== false, axis: cfg.axis ? String(cfg.axis).toUpperCase() : undefined,
         base: cfg.base != null ? Math.max(1, Math.round(+cfg.base) || 1) : undefined,
+        chuck: cfg.chuck != null ? (/^(end|ende|right|rechts)$/i.test(String(cfg.chuck)) ? 'end' : 'start') : undefined,
         d0: cfg.d0 != null ? Math.max(1, +cfg.d0 || 60) : undefined, d1: cfg.d1 != null ? Math.max(1, +cfg.d1 || 60) : undefined, L: cfg.L != null ? Math.max(1, +cfg.L || 500) : undefined } : null;
       if (rotAxis.explicit) Object.keys(rotAxis.explicit).forEach(function (k) { if (rotAxis.explicit[k] === undefined) delete rotAxis.explicit[k]; });
       if (cfg && cfg.path) commands.path(cfg.path);
@@ -319,6 +321,7 @@
     show.forEach(function (h) { if (h) { try { setUI(h, true); } catch (e) { console.warn(e.message); } } });
     ['projection', 'render', 'path', 'view'].forEach(function (k) { if (q.has(k)) { try { cmd(k, q.get(k)); } catch (e) { console.warn(e.message); } } });
     if (q.has('aplot')) { try { cmd('aplot', q.get('aplot')); } catch (e) {} }
+    if (q.has('frames')) { try { cmd('frames', q.get('frames')); } catch (e) {} }
   }
 
   var lastState = '';

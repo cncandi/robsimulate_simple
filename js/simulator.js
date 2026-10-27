@@ -565,7 +565,10 @@ function cycleTheme(){ const t=document.documentElement.getAttribute('data-theme
 applyTheme(true);
 
 // World origin frame
-function wArrow(d,col,len,org){scene.add(new THREE.ArrowHelper(new THREE.Vector3(...d).normalize(),new THREE.Vector3(...org),len,col,len*.18,len*.09));}
+// Koordinatensysteme (Welt, BASE, TCP, Zielpunkte) ein-/ausblendbar: Befehl frames bzw. ?frames=0
+var showFrames=true;
+const worldAxesGrp=new THREE.Group();scene.add(worldAxesGrp);
+function wArrow(d,col,len,org){worldAxesGrp.add(new THREE.ArrowHelper(new THREE.Vector3(...d).normalize(),new THREE.Vector3(...org),len,col,len*.18,len*.09));}
 wArrow([1,0,0],0xff3333,300,[0,0,0]);
 wArrow([0,1,0],0x33ff33,300,[0,0,0]);
 wArrow([0,0,1],0x3377ff,300,[0,0,0]);
@@ -581,8 +584,9 @@ const markerVisuals=new THREE.Group();markerGrp.add(markerVisuals);
   markerVisuals.add(sp);
   const ring=new THREE.Mesh(new THREE.TorusGeometry(36,5,6,24),new THREE.MeshBasicMaterial({color:0x32c6da}));
   ring.rotation.x=Math.PI/2;markerVisuals.add(ring);
+  const mAx=new THREE.Group();mAx.name='marker-axes';markerVisuals.add(mAx);
   for(const[d,c]of[[[1,0,0],0xff6666],[[0,1,0],0x66ff66],[[0,0,1],0x6699ff]])
-    markerVisuals.add(new THREE.ArrowHelper(new THREE.Vector3(...d),new THREE.Vector3(),190,c,38,19));
+    mAx.add(new THREE.ArrowHelper(new THREE.Vector3(...d),new THREE.Vector3(),190,c,38,19));
   markerGrp.visible=false;
 }
 const TYPE_COL={LIN:0xf05500,PTP:0xffaa00,SLIN:0x00aaff,CIRC:0xaa44ff,CIRC_AUX:0x445566};
@@ -592,7 +596,7 @@ function kukaEuler(A,B,C){const r=THREE.MathUtils.degToRad;return new THREE.Eule
 function makeFrame(pos){
   const grp=new THREE.Group();
   for(const[d,c]of[[[1,0,0],0xff4444],[[0,1,0],0x44ff44],[[0,0,1],0x4488ff]])
-    grp.add(new THREE.ArrowHelper(new THREE.Vector3(...d),new THREE.Vector3(),frameSize,c,frameSize*.2,frameSize*.1));
+    {const ah=new THREE.ArrowHelper(new THREE.Vector3(...d),new THREE.Vector3(),frameSize,c,frameSize*.2,frameSize*.1);ah.userData.frameAxis=true;ah.visible=showFrames;grp.add(ah);}
   grp.add(new THREE.Mesh(new THREE.SphereGeometry(sphereSize,8,8),new THREE.MeshBasicMaterial({color:TYPE_COL[pos.type]!==undefined?TYPE_COL[pos.type]:0xffffff})));
   grp.position.set(pos.X,pos.Y,pos.Z);
   grp.setRotationFromEuler(kukaEuler(pos.A,pos.B,pos.C));
@@ -714,7 +718,10 @@ function _buildSkeleton(angles) {
     s.position.set(pts[i][0], pts[i][1], pts[i][2]);
     robotGrp.add(s);
   }
-  if (pts[7]) {
+  // Werkzeugmarke (Kugel, Ring, Achsen) nur ohne Robotermodell; Achsen nur mit eingeblendeten Koordinatensystemen
+  markerVisuals.visible = !hasSTL;
+  const mAx = markerVisuals.getObjectByName('marker-axes'); if (mAx) mAx.visible = showFrames;
+  if (pts[7] && !hasSTL && showFrames) {
     const tcp = pts[7], R = fk.tcp_rot, aLen = 150;
     for (const [[cx,cy,cz], col] of [[[1,0,0],0xff4444],[[0,1,0],0x44ff44],[[0,0,1],0x4488ff]]) {
       robotGrp.add(new THREE.ArrowHelper(
@@ -996,7 +1003,16 @@ function syncBaseFrameGroups() {
     grp.traverse(function(obj) {
       if (obj.material) { obj.material.opacity = isActive ? 1.0 : 0.35; obj.material.transparent = !isActive; }
     });
+    grp.visible = showFrames;
   });
+  requestRender();
+}
+function setFrames(on) {
+  showFrames = !!on; worldAxesGrp.visible = showFrames;
+  baseFrameGroups.forEach(function (g) { g.visible = showFrames; });
+  posGrp.traverse(function (o) { if (o.userData && o.userData.frameAxis) o.visible = showFrames; });
+  var mAx = markerVisuals.getObjectByName('marker-axes'); if (mAx) mAx.visible = showFrames;
+  try { if (typeof jointAngles !== 'undefined' && jointAngles) buildRobotModel(jointAngles); } catch (e) {}
   requestRender();
 }
 
