@@ -245,6 +245,7 @@
       if (typeof r !== 'object' || !r.zip_url) throw new Error('{name, zip_url} oder "default" erwartet');
       var u = new URL(String(r.zip_url), location.href);
       if (u.protocol !== 'https:') throw new Error('Roboter-URL muss HTTPS verwenden');
+      if (!/(^|\.)cnc-technik\.de$/.test(u.hostname) && u.hostname !== location.hostname) throw new Error('Roboter nur aus der RobLib (cnc-technik.de) laden');
       return loadLibRobot({ name: String(r.name || ''), zip_url: u.href }).then(function () {
         if (document.getElementById('simple-robot-name').textContent === 'Fehler beim Laden') throw new Error('Roboter konnte nicht geladen werden');
         return waitIK();
@@ -281,9 +282,28 @@
     return r === undefined ? getState() : r;
   }
 
+  // ── Erlaubte einbettende Seiten ─────────────────────────────────
+  // Nur diese Origins dürfen per postMessage steuern und erhalten Ereignisse (Programm, Zustand, BASE/TCP).
+  // Weitere Einbettungen hier ergänzen.
+  var ALLOWED_ORIGINS = [
+    /^https:\/\/(www\.)?cnc-technik\.de$/,
+    /^https:\/\/(www\.)?p3d-slicer\.online$/,
+    /^https:\/\/[a-z0-9-]+-cncandis-projects\.vercel\.app$/,
+    /^https:\/\/formpilot\.vercel\.app$/,
+    /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
+  ];
+  function originAllowed(o) { return typeof o === 'string' && ALLOWED_ORIGINS.some(function (re) { return re.test(o); }); }
+  var parentOrigin = (function () {   // Origin des einbettenden Fensters (für Ereignisse vor der ersten Nachricht)
+    var o = '';
+    try { if (location.ancestorOrigins && location.ancestorOrigins.length) o = location.ancestorOrigins[0]; } catch (e) {}
+    if (!o) { try { o = document.referrer ? new URL(document.referrer).origin : ''; } catch (e) {} }
+    return originAllowed(o) ? o : '';
+  })();
+  var warnedOrigin = {};
+
   // ── Ereignisse ──────────────────────────────────────────────────
   function post(msg) {
-    try { if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*'); } catch (e) {}
+    try { if (window.parent && window.parent !== window && parentOrigin) window.parent.postMessage(msg, parentOrigin); } catch (e) {}
     try { if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage(msg); } catch (e) {}
   }
   function emit(event, data) {
@@ -301,8 +321,10 @@
   }
   window.addEventListener('message', function (e) {
     if (e.source !== window.parent || window.parent === window) return;  // nur vom einbettenden Fenster
+    if (!originAllowed(e.origin)) { if (!warnedOrigin[e.origin]) { warnedOrigin[e.origin] = 1; console.warn('RobSimul: Befehle von ' + e.origin + ' sind nicht freigegeben.'); } return; }
+    parentOrigin = e.origin;
     var msg = e.data; if (typeof msg === 'string') { try { msg = JSON.parse(msg); } catch (x) { return; } }
-    handle(msg, function (r) { e.source.postMessage(r, e.origin === 'null' ? '*' : e.origin); });
+    handle(msg, function (r) { e.source.postMessage(r, e.origin); });
   });
   if (window.chrome && window.chrome.webview) {
     window.chrome.webview.addEventListener('message', function (e) {

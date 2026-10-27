@@ -130,7 +130,8 @@ var rotAxis = { on: false, explicit: null, header: null, ek: false, axis: 'X', b
         var q = pos[j].rel;
         var rj = Math.min(rotAxis.d0, rotAxis.d1) / 2;
         if (q && typeof pos[j].E1 === 'number') { var v = [q.X, q.Y, q.Z]; rj = Math.max(rj, Math.hypot(v[(k + 1) % 3], v[(k + 2) % 3]) - 0.5); lo = Math.min(lo, v[k]); hi = Math.max(hi, v[k]); }
-        H[j * 3] = rj;   // Teil reicht höchstens bis an die Düse (Lagen wachsen radial nach außen) H[j * 3 + 1] = lo; H[j * 3 + 2] = hi;
+        H[j * 3] = rj;   // Teil reicht höchstens bis an die Düse (Lagen wachsen radial nach außen)
+        H[j * 3 + 1] = lo; H[j * 3 + 2] = hi;
       }
       _hp = H; _hpPos = pos;
     }

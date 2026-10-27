@@ -3557,6 +3557,7 @@ window.addEventListener('load', function() {
   setView('iso');
   try {
     var saved = JSON.parse(localStorage.getItem(_ROBOT_KEY) || 'null');
-    if (saved && saved.zip_url) loadLibRobot(saved);
+    var okUrl = function (u) { try { u = new URL(u, location.href); return u.protocol === 'https:' && (/(^|\.)cnc-technik\.de$/.test(u.hostname) || u.hostname === location.hostname); } catch (e) { return false; } };
+    if (saved && saved.zip_url && okUrl(saved.zip_url)) loadLibRobot(saved);   // nur Roboter aus der RobLib
   } catch(e) {}
 });
