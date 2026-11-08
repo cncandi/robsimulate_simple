@@ -27,7 +27,7 @@
   // ── Bereiche einzeln ein-/ausblenden ─────────────────────────────
   // Jeder Bereich hat eine Body-Klasse rs-hide-<bereich> (CSS in simulator.css).
   // Der rechte Bereich (panel) verschwindet automatisch, wenn sim, base und tcp aus sind.
-  var UI_PARTS = ['header', 'toolbar', 'editor', 'sim', 'base', 'tcp', 'statusbar', 'legend', 'hint',
+  var UI_PARTS = ['header', 'toolbar', 'editor', 'sim', 'base', 'tcp', 'statusbar', 'legend', 'hint', 'kv',
                   'tb-view', 'tb-proj', 'tb-render', 'tb-zoom', 'tb-path', 'tb-aplot'];
   var UI_GROUPS = { panel: ['sim', 'base', 'tcp'], all: UI_PARTS.slice(), 'tb-all': ['tb-view', 'tb-proj', 'tb-render', 'tb-zoom', 'tb-path', 'tb-aplot'] };
   function uiVisible(part) {

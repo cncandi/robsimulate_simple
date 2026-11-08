@@ -285,6 +285,7 @@ body.rs-hide-sim [data-sec="sim"],body.rs-hide-base [data-sec="base"],body.rs-hi
 body.rs-hide-statusbar>footer.statusbar{display:none}
 body.rs-hide-legend .vp .legend{display:none}
 body.rs-hide-hint .vp .scene-hint{display:none}
+body.rs-hide-kv .sim-kv{display:none!important}
 body.rs-hide-tb-view [data-grp="view"],body.rs-hide-tb-proj [data-grp="proj"],body.rs-hide-tb-render [data-grp="render"],
 body.rs-hide-tb-zoom [data-grp="zoom"],body.rs-hide-tb-path [data-grp="path"],body.rs-hide-tb-aplot [data-grp="aplot"]{display:none}
 

@@ -174,6 +174,7 @@ Jeder Bereich lässt sich unabhängig ein- und ausblenden, per URL beim Start od
 | `statusbar` | Statuszeile unten |
 | `legend` | Achsenlegende X/Y/Z im 3D-Fenster |
 | `hint` | Maushinweis im 3D-Fenster |
+| `kv` | Kennzahlenzeile Satz / TCP-Vorschub / Tempo im Abschnitt Simulation |
 | `aplot` | A-Plot / Robot Map |
 
 Gruppen: `panel` = `sim`,`base`,`tcp`; `tb-all` = alle Toolbar-Gruppen; `all` = alle Bereiche (außer `aplot`).

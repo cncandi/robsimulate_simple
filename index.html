@@ -12,7 +12,7 @@
 (function(){var t=null;try{t=new URLSearchParams(location.search).get('theme')||localStorage.getItem('robsimSimple.theme');}catch(e){}
 if(!/^(dark|light|industrial)$/.test(t||''))t='industrial';document.documentElement.setAttribute('data-theme',t);})();
 </script>
-<link rel="stylesheet" href="./css/simulator.css?v=20261026f">
+<link rel="stylesheet" href="./css/simulator.css?v=20261108a">
 </head>
 <body>
 
@@ -134,7 +134,7 @@ if(!/^(dark|light|industrial)$/.test(t||''))t='industrial';document.documentElem
       <div class="info-line" id="prog-info" style="display:none;white-space:normal"></div>
       <div class="info-line warn" id="sim-warn" style="display:none" title="Klicken: zur ersten Stelle springen"></div>
       <button class="btn" id="plc-quick" style="display:none;margin-top:6px;width:100%" onclick="plcStart()" title="Prüfen, ob die Lage des Teils (BASE) die Ursache ist, und eine bessere Lage suchen">Teilposition prüfen und optimieren</button>
-      <div class="kv" style="margin:10px 0 12px">
+      <div class="kv sim-kv" style="margin:10px 0 12px">
         <div><b id="pos-v">— / —</b><span>Satz</span></div>
         <div><b id="tcp-vel-v">0 mm/min</b><span>TCP-Vorschub</span></div>
         <div><b id="spd-v">40%</b><span>Tempo</span></div>
@@ -304,6 +304,6 @@ if(!/^(dark|light|industrial)$/.test(t||''))t='industrial';document.documentElem
 <script src="./js/rotary.js?v=20261027e"></script>
 <script src="./js/graphics.js?v=20261026h" data-key="robsimSimple.quality"></script>
 <script src="./js/placement.js?v=20261026f"></script>
-<script src="./js/host-api.js?v=20261027e"></script>
+<script src="./js/host-api.js?v=20261108a"></script>
 </body>
 </html>
